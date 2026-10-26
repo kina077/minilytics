@@ -4,6 +4,8 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2025-09-01",
   "observability": { "enabled": true },
+  // Workers Builds runs `npx wrangler deploy`; this builds the dashboard first.
+  "build": { "command": "npm run build" },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -16,7 +18,7 @@
       "binding": "DB",
       "database_name": "minilytics",
       // Replace with the id printed by `npx wrangler d1 create minilytics`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "0e06fcfb-4d89-45ea-a1f1-2677940c63f6",
       "migrations_dir": "migrations"
     }
   ]

@@ -31,7 +31,34 @@ export function normalizePath(pathname: string): string {
     p = decodeURI(p);
   } catch {}
   if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
-  return p.slice(0, 500);
+  return maskNames(p).slice(0, 500);
+}
+
+// DomainToolBelt privacy rule: a name someone looked up must never be stored. These pages carry the
+// name as the next path segment, and any segment shaped like a domain name is masked as well.
+const NAME_PAGES = new Set(['domain', 'whois', 'appraisal', 'trademark', 'x-card']);
+const FILE_EXT = /\.(html?|xml|txt|json|js|css|png|jpe?g|svg|webp|ico|pdf)$/i;
+const NAME_LIKE = /^[^\s/]+\.[^\s/.]+$/;
+
+export function maskNames(path: string): string {
+  const parts = path.split('/');
+  for (let i = 1; i < parts.length; i++) {
+    const seg = parts[i];
+    if (!seg) continue;
+    const afterNamePage = NAME_PAGES.has(parts[i - 1].toLowerCase());
+    if (afterNamePage || (NAME_LIKE.test(seg) && !FILE_EXT.test(seg))) parts[i] = ':name';
+  }
+  return parts.join('/');
+}
+
+/** Outbound link target: origin plus masked path (marketplace links often carry the name). */
+export function maskOutbound(target: string): string | null {
+  try {
+    const u = new URL(target);
+    return (u.origin + normalizePath(u.pathname)).slice(0, 500);
+  } catch {
+    return null;
+  }
 }
 
 function stripWww(h: string) {
@@ -164,7 +191,7 @@ export async function ingest(
       insertEvent(db, site.id, sid, vid, now, 'goal', name, path, props),
     );
   } else if (t === 'outbound') {
-    const target = clip(body.n, 500);
+    const target = maskOutbound(clip(body.n, 500) ?? '');
     if (!target) return;
     stmts.push(
       db.prepare('UPDATE sessions SET last_seen_at = ? WHERE site_id = ? AND id = ?').bind(now, site.id, sid),

@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { classify } from '../src/shared/sources';
-import { belongsTo, normalizePath } from '../src/worker/collect';
+import { belongsTo, maskNames, maskOutbound, normalizePath } from '../src/worker/collect';
 import { verifyStandardWebhook } from '../src/worker/lib/crypto';
 import { bucketLabels, resolveRange, startOfDay, tzOffset } from '../src/worker/lib/time';
 import { isBot, parseUA } from '../src/worker/lib/ua';
@@ -98,5 +98,28 @@ describe('Standard Webhooks (Dodo)', () => {
   it('rejects tampering and stale timestamps', async () => {
     expect(await verifyStandardWebhook(secret, { id: 'msg_1', timestamp: ts, signature: `v1,${sig}` }, body + ' ')).toBe(false);
     expect(await verifyStandardWebhook(secret, { id: 'msg_1', timestamp: String(Number(ts) - 3600), signature: `v1,${sig}` }, body)).toBe(false);
+  });
+});
+
+describe('name masking (DomainToolBelt)', () => {
+  it('masks the name on lookup pages', () => {
+    expect(normalizePath('/domain/example.com')).toBe('/domain/:name');
+    expect(normalizePath('/tools/whois/example.com')).toBe('/tools/whois/:name');
+    expect(normalizePath('/tools/appraisal/bestname')).toBe('/tools/appraisal/:name');
+    expect(normalizePath('/tools/trademark/apple')).toBe('/tools/trademark/:name');
+    expect(normalizePath('/x-card/abc123')).toBe('/x-card/:name');
+    expect(normalizePath('/tools/whois/xn--80ak6aa92e.com')).toBe('/tools/whois/:name');
+  });
+  it('masks any domain-shaped segment and keeps normal pages', () => {
+    expect(maskNames('/foo/shop.io/bar')).toBe('/foo/:name/bar');
+    expect(normalizePath('/drops/expiring-today')).toBe('/drops/expiring-today');
+    expect(normalizePath('/tools/whois')).toBe('/tools/whois');
+    expect(normalizePath('/blog/post.html')).toBe('/blog/post.html');
+    expect(normalizePath('/')).toBe('/');
+  });
+  it('masks outbound marketplace links', () => {
+    expect(maskOutbound('https://dan.com/buy-domain/example.com')).toBe('https://dan.com/buy-domain/:name');
+    expect(maskOutbound('https://www.godaddy.com/domainsearch/find')).toBe('https://www.godaddy.com/domainsearch/find');
+    expect(maskOutbound('not a url')).toBeNull();
   });
 });
