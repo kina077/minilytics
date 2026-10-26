@@ -1,3 +1,5 @@
+/*! Minilytics tracker (MIT, github.com/surendrapandar/minilytics) with DomainToolBelt name masking and data-exclude.
+   Masks looked-up names in the browser before sending; see test/tracker.test.ts. */
 /*! Minilytics tracker — <script defer data-website-id="SITE_ID" src="https://YOUR-HOST/js/script.js"></script> */
 (function () {
   'use strict';
@@ -9,6 +11,36 @@
   var endpoint = script.getAttribute('data-api') || new URL(script.src).origin + '/api/event';
   var allowLocal = script.hasAttribute('data-allow-localhost');
   var cookieDomain = script.getAttribute('data-domain');
+  // DomainToolBelt: path prefixes that are never tracked, e.g. data-exclude="/dashboard,/login".
+  var excluded = (script.getAttribute('data-exclude') || '').split(',').filter(Boolean);
+  function isExcluded(p) {
+    for (var i = 0; i < excluded.length; i++) if (p === excluded[i] || p.indexOf(excluded[i] + '/') === 0) return true;
+    return false;
+  }
+  // DomainToolBelt privacy rule: a name someone looked up never leaves the page. Lookup pages carry the
+  // name as the next path segment, and any domain-shaped segment is masked too. Only campaign
+  // parameters are kept from the query string.
+  var NAME_PAGES = { domain: 1, whois: 1, appraisal: 1, trademark: 1, 'x-card': 1 };
+  var FILE_EXT = /\.(html?|xml|txt|json|js|css|png|jpe?g|svg|webp|ico|pdf)$/i;
+  var NAME_LIKE = /^[^\s/]+\.[^\s/.]+$/;
+  var KEEP_PARAMS = /^(utm_source|utm_medium|utm_campaign|utm_term|utm_content|ref|via)$/;
+  function maskPath(p) {
+    var parts = p.split('/');
+    for (var i = 1; i < parts.length; i++) {
+      var seg = parts[i], prev = parts[i - 1].toLowerCase(), dec = seg;
+      if (!seg) continue;
+      try { dec = decodeURIComponent(seg); } catch (e) {}
+      if (NAME_PAGES[prev] || (NAME_LIKE.test(dec) && !FILE_EXT.test(dec))) parts[i] = ':name';
+    }
+    return parts.join('/');
+  }
+  function maskUrl(href, keepQuery) {
+    try {
+      var u = new URL(href, loc.href), q = [];
+      if (keepQuery) u.searchParams.forEach(function (v, k) { if (KEEP_PARAMS.test(k)) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v)); });
+      return u.origin + maskPath(u.pathname) + (q.length ? '?' + q.join('&') : '');
+    } catch (e) { return ''; }
+  }
   var VID = 'ml_vid', SID = 'ml_sid', YEAR = 31536000, SESSION = 1800;
 
   var queued = (w.minilytics && w.minilytics.q) || [];
@@ -69,20 +101,10 @@
   }
 
   // ---- transport
-  // Personal data in URLs (e.g. ?email= on a payment return page) never leaves the browser.
-  var PRIVATE_PARAM = /^(e-?mail|name|phone|password|pass|token|access_token|id_token|auth|code|secret|key|api_key|license_key|license)$/i;
-  function cleanUrl(href) {
-    try {
-      var u = new URL(href);
-      var drop = [];
-      u.searchParams.forEach(function (_, k) { if (PRIVATE_PARAM.test(k)) drop.push(k); });
-      for (var i = 0; i < drop.length; i++) u.searchParams.delete(drop[i]);
-      return u.toString();
-    } catch (e) { return href; }
-  }
   function send(type, extra, beacon) {
+    if (isExcluded(loc.pathname)) return;
     var id = ids();
-    var body = { w: siteId, t: type, u: cleanUrl(loc.href), vid: id.vid, sid: id.sid, sw: w.screen ? screen.width : 0 };
+    var body = { w: siteId, t: type, u: maskUrl(loc.href, true), vid: id.vid, sid: id.sid, sw: w.screen ? screen.width : 0 };
     for (var k in extra) if (extra[k] !== undefined) body[k] = extra[k];
     var json = JSON.stringify(body);
     // text/plain keeps this a "simple" request: no CORS preflight, works with sendBeacon.
@@ -118,7 +140,7 @@
     if (lastPage !== null) flushTime(false);
     lastPage = page;
     pings = 0;
-    send('pageview', { r: firstView ? d.referrer : '' });
+    send('pageview', { r: firstView && d.referrer ? maskUrl(d.referrer, false) : '' });
     firstView = false;
   }
   var hist = w.history;
@@ -139,9 +161,6 @@
     var id = ids();
     return { ml_visitor_id: id.vid, ml_session_id: id.sid };
   }
-  // Dodo checkout links carry the visitor as metadata. They're tagged as soon as they appear on the page,
-  // not just on click, because other scripts (e.g. Umami's click tracking) may copy the href and navigate
-  // before our click handler runs.
   function tagDodoLink(a) {
     try {
       var u = new URL(a.href);
@@ -149,32 +168,9 @@
       var att = attribution();
       u.searchParams.set('metadata_ml_visitor_id', att.ml_visitor_id);
       u.searchParams.set('metadata_ml_session_id', att.ml_session_id);
-      var next = u.toString();
-      if (a.href !== next) a.href = next;
+      a.href = u.toString();
     } catch (e) {}
   }
-  function tagDodoLinks() {
-    var links = d.querySelectorAll('a[href*="dodopayments.com"]');
-    for (var i = 0; i < links.length; i++) tagDodoLink(links[i]);
-  }
-  var tagQueued = false;
-  function queueTag() {
-    if (tagQueued) return;
-    tagQueued = true;
-    setTimeout(function () { tagQueued = false; tagDodoLinks(); }, 50);
-  }
-  if (w.MutationObserver) {
-    new MutationObserver(queueTag).observe(d.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] });
-  }
-  if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', tagDodoLinks);
-  else tagDodoLinks();
-  // Refresh right before a click starts, in case the session id rotated while the page sat idle.
-  function onPress(e) {
-    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-    if (a) tagDodoLink(a);
-  }
-  d.addEventListener('pointerdown', onPress, true);
-  d.addEventListener('keydown', function (e) { if (e.key === 'Enter') onPress(e); }, true);
   function onClick(e) {
     var el = e.target && e.target.closest ? e.target : null;
     if (!el) return;
@@ -193,7 +189,7 @@
       try {
         var u = new URL(a.href, loc.href);
         if (/^https?:$/.test(u.protocol) && u.hostname !== loc.hostname && !(domain && u.hostname.slice(-domain.length) === domain)) {
-          send('outbound', { n: u.origin + u.pathname }, true);
+          send('outbound', { n: maskUrl(u.href, false) }, true);
         }
       } catch (err) {}
     }
