@@ -1,8 +1,10 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { classify } from '../src/shared/sources';
+import { parseTiers, planInfo } from '../src/worker/billing';
 import { belongsTo, maskNames, maskOutbound, normalizePath } from '../src/worker/collect';
-import { verifyStandardWebhook } from '../src/worker/lib/crypto';
+import type { Env } from '../src/worker/env';
+import { verifyStandardWebhook, verifyStripeWebhook } from '../src/worker/lib/crypto';
 import { bucketLabels, resolveRange, startOfDay, tzOffset } from '../src/worker/lib/time';
 import { isBot, parseUA } from '../src/worker/lib/ua';
 
@@ -121,5 +123,53 @@ describe('name masking (DomainToolBelt)', () => {
     expect(maskOutbound('https://dan.com/buy-domain/example.com')).toBe('https://dan.com/buy-domain/:name');
     expect(maskOutbound('https://www.godaddy.com/domainsearch/find')).toBe('https://www.godaddy.com/domainsearch/find');
     expect(maskOutbound('not a url')).toBeNull();
+  });
+});
+
+describe('Stripe webhooks', () => {
+  const secret = 'whsec_test_secret';
+  const body = '{"type":"checkout.session.completed"}';
+  const t = String(Math.floor(Date.now() / 1000));
+  const sig = createHmac('sha256', secret).update(`${t}.${body}`).digest('hex');
+  it('accepts a valid signature (also among several)', async () => {
+    expect(await verifyStripeWebhook(secret, `t=${t},v1=${sig}`, body)).toBe(true);
+    expect(await verifyStripeWebhook(secret, `t=${t},v1=deadbeef,v1=${sig},v0=old`, body)).toBe(true);
+  });
+  it('rejects tampering, a wrong secret and stale timestamps', async () => {
+    expect(await verifyStripeWebhook(secret, `t=${t},v1=${sig}`, body + ' ')).toBe(false);
+    expect(await verifyStripeWebhook('whsec_other', `t=${t},v1=${sig}`, body)).toBe(false);
+    expect(await verifyStripeWebhook(secret, `t=${Number(t) - 3600},v1=${sig}`, body)).toBe(false);
+    expect(await verifyStripeWebhook(secret, null, body)).toBe(false);
+  });
+});
+
+describe('price tiers', () => {
+  const TIERS = '$29:5, $49:pdt_49:5, $100';
+  const env = (paid: number) =>
+    ({
+      GOOGLE_CLIENT_ID: 'x',
+      GOOGLE_CLIENT_SECRET: 'x',
+      PLAN_TIERS: TIERS,
+      DB: { prepare: () => ({ first: async () => ({ n: paid }) }) },
+    }) as unknown as Env;
+
+  it('parses tiers with optional product ids and spots', () => {
+    expect(parseTiers(TIERS)).toEqual([
+      { price: '$29', productId: null, spots: 5 },
+      { price: '$49', productId: 'pdt_49', spots: 5 },
+      { price: '$100', productId: null, spots: 0 },
+    ]);
+  });
+  it('sells the next tier once the first sells out, and shows what sold', async () => {
+    expect(await planInfo(env(7))).toMatchObject({
+      price: '$49', spots: 5, spotsLeft: 3, nextPrice: '$100', soldOut: [{ price: '$29', spots: 5 }],
+    });
+  });
+  it('offers a monthly plan next to the tiers when its product is set', async () => {
+    expect((await planInfo(env(7))).monthly).toBeNull();
+    expect(await planInfo({ ...env(7), MONTHLY_PRODUCT_ID: 'pdt_m', MONTHLY_PRICE: '$9' } as Env)).toMatchObject({ price: '$49', monthly: { price: '$9' } });
+  });
+  it('keeps selling the last buyable tier when the next price has no product yet', async () => {
+    expect(await planInfo(env(12))).toMatchObject({ price: '$49', spotsLeft: null, nextPrice: '$100' });
   });
 });
