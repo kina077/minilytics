@@ -35,7 +35,7 @@ const FILTER_LABELS: Record<string, { label: string; dim: string }> = {
 };
 
 export function Dashboard({ siteId }: { siteId: string }) {
-  const [q, update] = useQueryState();
+  const [q, update] = useQueryState(siteId);
   const [reloadKey, setReloadKey] = useState(0);
   const [visitor, setVisitor] = useState<string | null>(null);
   const [live, setLive] = useState(() => new URLSearchParams(window.location.search).get('live') === '1');
@@ -54,10 +54,23 @@ export function Dashboard({ siteId }: { siteId: string }) {
   const { data: overview, loading } = useApi<Overview>(site ? `/api/sites/${siteId}/overview?${qs(q)}` : null, reloadKey);
 
   const addFilter = useCallback((key: string, value: string) => update({ filters: { ...q.filters, [key]: value } }), [q.filters, update]);
-  const removeFilter = (key: string) => {
-    const { [key]: _, ...rest } = q.filters;
-    update({ filters: rest });
+  const excludeFilter = useCallback(
+    (key: string, value: string) => {
+      const prev = q.filters[`!${key}`];
+      const list = Array.isArray(prev) ? prev : [];
+      if (list.includes(value)) return;
+      update({ filters: { ...q.filters, [`!${key}`]: [...list, value] } });
+    },
+    [q.filters, update],
+  );
+  const removeFilter = (key: string, value?: string) => {
+    const { [key]: cur, ...rest } = q.filters;
+    const left = Array.isArray(cur) && value !== undefined ? cur.filter((v) => v !== value) : [];
+    update({ filters: left.length ? { ...rest, [key]: left } : rest });
   };
+  const chips = Object.entries(q.filters).flatMap(([k, v]) =>
+    (Array.isArray(v) ? v : [v]).map((val) => ({ key: k, field: k.replace(/^!/, ''), not: k.startsWith('!'), val })),
+  );
 
   const dash: Dash | null = useMemo(() => {
     if (!site) return null;
@@ -69,9 +82,10 @@ export function Dashboard({ siteId }: { siteId: string }) {
       decimals,
       money: (minor, compact) => fmtMoney(minor, site.currency, decimals, compact),
       addFilter,
+      excludeFilter,
       openVisitor: setVisitor,
     };
-  }, [site, q, reloadKey, overview?.decimals, addFilter]);
+  }, [site, q, reloadKey, overview?.decimals, addFilter, excludeFilter]);
 
   if (sites && !site) {
     return (
@@ -101,11 +115,11 @@ export function Dashboard({ siteId }: { siteId: string }) {
 
         {Object.keys(q.filters).length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {Object.entries(q.filters).map(([k, v]) => (
-              <span key={k} className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white py-1 pl-3 pr-1 text-sm shadow-card">
-                <span className="text-stone-500">{FILTER_LABELS[k]?.label ?? k} is</span>
-                <span className="flex items-center gap-1.5 font-medium">{renderLabel(FILTER_LABELS[k]?.dim ?? k, { label: v || null })}</span>
-                <button className="rounded-lg px-1.5 text-stone-400 hover:bg-stone-100 hover:text-ink" onClick={() => removeFilter(k)} aria-label="Remove filter">
+            {chips.map(({ key, field, not, val }) => (
+              <span key={`${key}:${val}`} className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white py-1 pl-3 pr-1 text-sm shadow-card">
+                <span className="text-stone-500">{FILTER_LABELS[field]?.label ?? field} {not ? 'is not' : 'is'}</span>
+                <span className={`flex items-center gap-1.5 font-medium ${not ? 'line-through decoration-stone-400' : ''}`}>{renderLabel(FILTER_LABELS[field]?.dim ?? field, { label: val || null })}</span>
+                <button className="rounded-lg px-1.5 text-stone-400 hover:bg-stone-100 hover:text-ink" onClick={() => removeFilter(key, val)} aria-label="Remove filter">
                   ✕
                 </button>
               </span>

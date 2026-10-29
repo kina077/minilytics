@@ -30,9 +30,19 @@ export interface Site {
   currency: string;
   api_key: string;
   dodo_webhook_secret: string | null;
+  dodo_product_ids?: string | null;
+  stripe_webhook_secret?: string | null;
   created_at: number;
   visitors24h?: number;
   online?: number;
+}
+
+export interface SiteSpark {
+  id: string;
+  visitors: number;
+  revenue: number;
+  online: number;
+  series: { visitors: number; revenue: number }[];
 }
 
 export interface Kpis {
@@ -67,7 +77,8 @@ export interface BreakdownRow {
   extra?: string | null;
 }
 
-export type Filters = Record<string, string>;
+/** `key: value` keeps only matching visits; `'!key': [values]` leaves those values out. */
+export type Filters = Record<string, string | string[]>;
 
 export interface Query {
   period: string;
@@ -86,4 +97,35 @@ export function qs(q: Query, extra: Record<string, string | number> = {}) {
   if (Object.keys(q.filters).length) p.set('filters', JSON.stringify(q.filters));
   for (const [k, v] of Object.entries(extra)) p.set(k, String(v));
   return p.toString();
+}
+
+export interface Me {
+  loggedIn: boolean;
+  hosted: boolean;
+  user: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    avatar: string | null;
+    admin: boolean;
+    paid: boolean;
+    plan_status: string;
+    plan_until: number | null;
+    plan: string | null;
+  } | null;
+}
+
+export interface PlanInfo {
+  hosted: boolean;
+  price: string;
+  interval: string;
+  spots: number;
+  spotsLeft: number | null;
+  nextPrice: string | null;
+  /** Earlier prices whose spots are all sold, oldest first. */
+  soldOut?: { price: string; spots: number }[];
+  checkout: boolean;
+  supportEmail: string | null;
+  /** Monthly subscription offered next to the main plan, when configured. */
+  monthly?: { price: string } | null;
 }
