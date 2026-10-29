@@ -5,6 +5,7 @@ import { parseTiers, planInfo } from '../src/worker/billing';
 import { belongsTo, maskNames, maskOutbound, normalizePath } from '../src/worker/collect';
 import type { Env } from '../src/worker/env';
 import { verifyStandardWebhook, verifyStripeWebhook } from '../src/worker/lib/crypto';
+import { filterSql, parseFilters } from '../src/worker/stats';
 import { bucketLabels, resolveRange, startOfDay, tzOffset } from '../src/worker/lib/time';
 import { isBot, parseUA } from '../src/worker/lib/ua';
 
@@ -171,5 +172,22 @@ describe('price tiers', () => {
   });
   it('keeps selling the last buyable tier when the next price has no product yet', async () => {
     expect(await planInfo(env(12))).toMatchObject({ price: '$49', spotsLeft: null, nextPrice: '$100' });
+  });
+});
+
+describe('exclude filters', () => {
+  it('parses "is not" filters as lists', () => {
+    expect(parseFilters(JSON.stringify({ country: 'FR', '!device': 'mobile', '!country': ['DZ', 'US', 5] }))).toEqual({
+      country: 'FR',
+      '!country': ['DZ', 'US'],
+      '!device': ['mobile'],
+    });
+  });
+  it('keeps visits with no value when leaving one out', () => {
+    const { sql, params } = filterSql({ '!country': ['DZ', ''], '!page': ['/x'] });
+    expect(sql).toContain('(s.country IS NULL OR s.country != ?)');
+    expect(sql).toContain('s.country IS NOT NULL');
+    expect(sql).toContain('NOT EXISTS');
+    expect(params).toEqual(['DZ', '/x']);
   });
 });

@@ -8,6 +8,7 @@ export interface Dash {
   decimals: number;
   money: (minor: number, compact?: boolean) => string;
   addFilter: (key: string, value: string) => void;
+  excludeFilter: (key: string, value: string) => void;
   openVisitor: (visitorId: string) => void;
 }
 

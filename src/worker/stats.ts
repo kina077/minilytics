@@ -25,7 +25,11 @@ const SESSION_FILTERS = [
   'hostname',
 ] as const;
 
-export type Filters = Partial<Record<(typeof SESSION_FILTERS)[number] | 'page' | 'goal', string>>;
+type FilterKey = (typeof SESSION_FILTERS)[number] | 'page' | 'goal';
+/** `country: 'FR'` keeps only France; `'!country': ['DZ', 'US']` leaves those countries out. */
+export type Filters = Partial<Record<FilterKey, string> & Record<`!${FilterKey}`, string[]>>;
+
+const MAX_EXCLUDES = 20;
 
 export function parseFilters(raw: string | undefined): Filters {
   if (!raw) return {};
@@ -34,6 +38,9 @@ export function parseFilters(raw: string | undefined): Filters {
     const out: Filters = {};
     for (const k of [...SESSION_FILTERS, 'page', 'goal'] as const) {
       if (typeof obj[k] === 'string') out[k] = obj[k].slice(0, 500);
+      const ex = obj[`!${k}`];
+      const list = (Array.isArray(ex) ? ex : [ex]).filter((v): v is string => typeof v === 'string');
+      if (list.length) out[`!${k}`] = list.slice(0, MAX_EXCLUDES).map((v) => v.slice(0, 500));
     }
     return out;
   } catch {
@@ -42,7 +49,7 @@ export function parseFilters(raw: string | undefined): Filters {
 }
 
 /** SQL + params restricting sessions `s` by the dashboard filters (not by time). */
-function filterSql(f: Filters): { sql: string; params: unknown[] } {
+export function filterSql(f: Filters): { sql: string; params: unknown[] } {
   const parts: string[] = [];
   const params: unknown[] = [];
   for (const k of SESSION_FILTERS) {
@@ -61,6 +68,23 @@ function filterSql(f: Filters): { sql: string; params: unknown[] } {
   if (f.goal) {
     parts.push(`EXISTS (SELECT 1 FROM events fe WHERE fe.site_id = s.site_id AND fe.session_id = s.id AND fe.type = 'goal' AND fe.name = ?)`);
     params.push(f.goal);
+  }
+  for (const k of SESSION_FILTERS) {
+    for (const v of f[`!${k}`] ?? []) {
+      if (v === '') parts.push(`s.${k} IS NOT NULL`);
+      else {
+        parts.push(`(s.${k} IS NULL OR s.${k} != ?)`);
+        params.push(v);
+      }
+    }
+  }
+  for (const v of f['!page'] ?? []) {
+    parts.push(`NOT EXISTS (SELECT 1 FROM events fe WHERE fe.site_id = s.site_id AND fe.session_id = s.id AND fe.type = 'pageview' AND fe.path = ?)`);
+    params.push(v);
+  }
+  for (const v of f['!goal'] ?? []) {
+    parts.push(`NOT EXISTS (SELECT 1 FROM events fe WHERE fe.site_id = s.site_id AND fe.session_id = s.id AND fe.type = 'goal' AND fe.name = ?)`);
+    params.push(v);
   }
   return { sql: parts.length ? ' AND ' + parts.join(' AND ') : '', params };
 }

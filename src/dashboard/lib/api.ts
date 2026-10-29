@@ -77,7 +77,8 @@ export interface BreakdownRow {
   extra?: string | null;
 }
 
-export type Filters = Record<string, string>;
+/** `key: value` keeps only matching visits; `'!key': [values]` leaves those values out. */
+export type Filters = Record<string, string | string[]>;
 
 export interface Query {
   period: string;

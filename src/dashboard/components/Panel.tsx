@@ -93,7 +93,7 @@ export function renderLabel(dim: string, row: Pick<BreakdownRow, 'label' | 'extr
   }
 }
 
-function Bars({ rows, dim, tab, sort, limit, onPick }: { rows: BreakdownRow[]; dim: string; tab: TabDef; sort: 'visitors' | 'revenue'; limit?: number; onPick?: (r: BreakdownRow) => void }) {
+function Bars({ rows, dim, tab, sort, limit, onPick, onExclude }: { rows: BreakdownRow[]; dim: string; tab: TabDef; sort: 'visitors' | 'revenue'; limit?: number; onPick?: (r: BreakdownRow) => void; onExclude?: (r: BreakdownRow) => void }) {
   const { money } = useDash();
   const sorted = useMemo(() => [...rows].sort((a, b) => (b[sort] ?? 0) - (a[sort] ?? 0) || b.visitors - a.visitors), [rows, sort]);
   const shown = limit ? sorted.slice(0, limit) : sorted;
@@ -119,6 +119,18 @@ function Bars({ rows, dim, tab, sort, limit, onPick }: { rows: BreakdownRow[]; d
             <div className="absolute inset-0 hidden rounded-lg ring-1 ring-stone-300/70 group-hover:block" />
             <div className="relative flex min-w-0 flex-1 items-center gap-2.5 px-3 text-[15px]">{renderLabel(dim, r)}</div>
             <div className="relative flex shrink-0 items-center gap-3 pr-3 text-[15px] font-medium">
+              {tab.filter && onExclude && (
+                <button
+                  className="hidden rounded-md px-1.5 text-xs font-normal text-stone-500 hover:bg-stone-200 hover:text-ink group-hover:inline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onExclude(r);
+                  }}
+                  title="Leave this out of the stats"
+                >
+                  Exclude
+                </button>
+              )}
               {r.revenue !== 0 && <span className="hidden text-sm font-normal text-revenue group-hover:inline">{money(r.revenue)}</span>}
               {sort === 'revenue' ? money(r.revenue, true) : fmtNumber(r.visitors)}
             </div>
@@ -129,7 +141,7 @@ function Bars({ rows, dim, tab, sort, limit, onPick }: { rows: BreakdownRow[]; d
               <div className="flex justify-between"><span className="text-stone-400">Revenue</span>{money(r.revenue)}</div>
               <div className="flex justify-between"><span className="text-stone-400">Customers</span>{r.customers}</div>
               <div className="flex justify-between"><span className="text-stone-400">Conversion</span>{r.visitors ? fmtPct(r.customers / r.visitors, 1) : '—'}</div>
-              {tab.filter && <div className="mt-1 text-stone-400">Click to filter</div>}
+              {tab.filter && <div className="mt-1 text-stone-400">Click to filter, or Exclude to leave it out</div>}
             </div>
           </div>
         );
@@ -139,7 +151,7 @@ function Bars({ rows, dim, tab, sort, limit, onPick }: { rows: BreakdownRow[]; d
 }
 
 export function Panel({ tabs }: { tabs: TabDef[] }) {
-  const { site, q, reloadKey, addFilter, money } = useDash();
+  const { site, q, reloadKey, addFilter, excludeFilter, money } = useDash();
   const [saved, setActive] = usePref(`ml_tab_${tabs[0].dim}`, tabs[0].dim);
   const active = tabs.some((t) => t.dim === saved) ? saved : tabs[0].dim;
   const [sort, setSort] = usePref<'visitors' | 'revenue'>(`ml_sort_${tabs[0].dim}`, 'visitors');
@@ -152,6 +164,11 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
     if (!tab.filter) return;
     setDetails(false);
     addFilter(tab.filter, r.label ?? '');
+  };
+  const exclude = (r: BreakdownRow) => {
+    if (!tab.filter) return;
+    setDetails(false);
+    excludeFilter(tab.filter, r.label ?? '');
   };
 
   const filtered = (data ?? []).filter((r) => !search || (r.label ?? '').toLowerCase().includes(search.toLowerCase()));
@@ -177,7 +194,7 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
       <div className={`flex-1 ${loading && !data ? 'animate-pulse' : ''}`}>
         {error && <p className="p-3 text-sm text-red-600">{error}</p>}
         {data && data.length === 0 && <p className="p-6 text-center text-sm text-stone-400">No data for this period</p>}
-        {data && <Bars rows={data} dim={active} tab={tab} sort={sort} limit={10} onPick={pick} />}
+        {data && <Bars rows={data} dim={active} tab={tab} sort={sort} limit={10} onPick={pick} onExclude={exclude} />}
       </div>
       {data && data.length > 10 && (
         <button className="mx-auto mt-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-stone-500 hover:text-ink" onClick={() => setDetails(true)}>
@@ -195,6 +212,7 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
                 <th className="pb-2 text-right font-medium">Revenue</th>
                 <th className="pb-2 text-right font-medium">Conv.</th>
                 <th className="pb-2 text-right font-medium">Rev/visitor</th>
+                {tab.filter && <th className="pb-2" />}
               </tr>
             </thead>
             <tbody>
@@ -205,6 +223,19 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
                   <td className="py-2 text-right">{money(r.revenue)}</td>
                   <td className="py-2 text-right">{r.visitors ? fmtPct(r.customers / r.visitors, 1) : '—'}</td>
                   <td className="py-2 text-right">{r.visitors ? money(r.revenue / r.visitors) : '—'}</td>
+                  {tab.filter && (
+                    <td className="py-2 pl-2 text-right">
+                      <button
+                        className="rounded-md px-1.5 text-xs text-stone-500 hover:bg-stone-200 hover:text-ink"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          exclude(r);
+                        }}
+                      >
+                        Exclude
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
