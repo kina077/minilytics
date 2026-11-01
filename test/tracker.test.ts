@@ -49,7 +49,7 @@ function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
   }
   window.document = document
   vm.runInNewContext(SRC, ctx)
-  return { sent, click: (a: string) => {
+  return { sent, window, click: (a: string) => {
     const el = { closest: (sel: string) => (sel.startsWith('a[') ? { href: a } : null) }
     for (const f of listeners.click || []) f({ target: el })
   } }
@@ -89,10 +89,35 @@ test('referrer and outbound links are masked', () => {
   assert.equal(sent[1].n, 'https://dan.com/buy-domain/:name')
 })
 
-test('account area sends nothing', () => {
+test('account area sends no pageviews or outbound clicks', () => {
   for (const p of ['/dashboard', '/dashboard/keyword-watch', '/login', '/auth/callback']) {
-    assert.equal(run('https://domaintoolbelt.com' + p).sent.length, 0, p)
+    const { sent, click } = run('https://domaintoolbelt.com' + p + '?token=secret')
+    click('https://dan.com/buy-domain/example.com')
+    assert.equal(sent.length, 0, p)
   }
+})
+
+test('goals in the account area go out on the bare prefix only', () => {
+  const { sent, window } = run('https://domaintoolbelt.com/auth/callback?code=secret#access_token=x')
+  window.minilytics('track', 'signed_up', { method: 'google' })
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].t, 'goal')
+  assert.equal(sent[0].n, 'signed_up')
+  assert.equal(sent[0].u, 'https://domaintoolbelt.com/auth')
+  assert.deepEqual(sent[0].p, { method: 'google' })
+  assert.ok(!JSON.stringify(sent).includes('secret'))
+})
+
+test('goal properties never carry a looked-up name or typed text', () => {
+  const { sent, window } = run('https://domaintoolbelt.com/search')
+  window.minilytics('track', 'marketplace_click', {
+    page: 'search', marketplace: 'godaddy', action: 'buy', domain: 'secret.com',
+    query: 'secretword', keyword: 'secretword', other: 'hidden.io', tld: '.co.uk', count: 3, ok: true, nested: { a: 1 },
+  })
+  const g = sent.find((e) => e.t === 'goal')!
+  assert.deepEqual(g.p, { page: 'search', marketplace: 'godaddy', action: 'buy', domain: ':name', other: ':name', tld: '.co.uk', count: 3, ok: true })
+  assert.ok(!JSON.stringify(sent).includes('secret'))
+  assert.ok(!JSON.stringify(sent).includes('hidden'))
 })
 
 test('events go to the Worker, not our origin', () => {

@@ -13,9 +13,10 @@
   var cookieDomain = script.getAttribute('data-domain');
   // DomainToolBelt: path prefixes that are never tracked, e.g. data-exclude="/dashboard,/login".
   var excluded = (script.getAttribute('data-exclude') || '').split(',').filter(Boolean);
-  function isExcluded(p) {
-    for (var i = 0; i < excluded.length; i++) if (p === excluded[i] || p.indexOf(excluded[i] + '/') === 0) return true;
-    return false;
+  // Returns the matching prefix (e.g. "/dashboard") or '' when the path is tracked.
+  function excludedPrefix(p) {
+    for (var i = 0; i < excluded.length; i++) if (p === excluded[i] || p.indexOf(excluded[i] + '/') === 0) return excluded[i];
+    return '';
   }
   // DomainToolBelt privacy rule: a name someone looked up never leaves the page. Lookup pages carry the
   // name as the next path segment, and any domain-shaped segment is masked too. Only campaign
@@ -101,10 +102,14 @@
   }
 
   // ---- transport
+  // Excluded areas (account pages) send no pageviews, pings or outbound clicks. Goals still go
+  // (sign up, sign in, saved / monitored names are conversions), reported on the bare prefix
+  // ("/dashboard", "/login") so no account URL, id or query ever leaves the page.
   function send(type, extra, beacon) {
-    if (isExcluded(loc.pathname)) return;
+    var ex = excludedPrefix(loc.pathname);
+    if (ex && type !== 'goal') return;
     var id = ids();
-    var body = { w: siteId, t: type, u: maskUrl(loc.href, true), vid: id.vid, sid: id.sid, sw: w.screen ? screen.width : 0 };
+    var body = { w: siteId, t: type, u: ex ? maskUrl(ex, false) : maskUrl(loc.href, true), vid: id.vid, sid: id.sid, sw: w.screen ? screen.width : 0 };
     for (var k in extra) if (extra[k] !== undefined) body[k] = extra[k];
     var json = JSON.stringify(body);
     // text/plain keeps this a "simple" request: no CORS preflight, works with sendBeacon.
@@ -153,9 +158,29 @@
   }
 
   // ---- goals, outbound links, Dodo Payments checkout links
+  // DomainToolBelt privacy rule for goal properties: free text someone typed (query, keyword) is
+  // dropped and any name-shaped value (domain, example.com) is sent as ":name". Counts, flags,
+  // venues, pages and TLDs stay, so goals can still be split by them.
+  var DROP_PROPS = { query: 1, q: 1, keyword: 1, keywords: 1, email: 1 };
+  function cleanProps(props) {
+    if (!props || typeof props !== 'object') return undefined;
+    var out = {}, n = 0;
+    for (var k in props) {
+      if (!Object.prototype.hasOwnProperty.call(props, k) || DROP_PROPS[k]) continue;
+      var v = props[k];
+      if (v === null || v === undefined || typeof v === 'object' || typeof v === 'function') continue;
+      if (typeof v === 'string') {
+        v = v.slice(0, 255);
+        if (k === 'domain' || k === 'name' || (v.charAt(0) !== '.' && NAME_LIKE.test(v) && !FILE_EXT.test(v))) v = ':name';
+      }
+      out[k] = v;
+      n++;
+    }
+    return n ? out : undefined;
+  }
   function goal(name, props) {
     if (!name) return;
-    send('goal', { n: String(name).slice(0, 64), p: props || undefined }, true);
+    send('goal', { n: String(name).slice(0, 64), p: cleanProps(props) }, true);
   }
   function attribution() {
     var id = ids();
