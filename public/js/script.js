@@ -1,5 +1,5 @@
-/*! Minilytics tracker (MIT, github.com/surendrapandar/minilytics) with DomainToolBelt name masking and data-exclude.
-   Masks looked-up names in the browser before sending; see test/tracker.test.ts. */
+/*! Minilytics tracker (MIT, github.com/surendrapandar/minilytics) with DomainToolBelt query filtering and data-exclude.
+   See test/tracker.test.ts. */
 /*! Minilytics tracker — <script defer data-website-id="SITE_ID" src="https://YOUR-HOST/js/script.js"></script> */
 (function () {
   'use strict';
@@ -18,28 +18,15 @@
     for (var i = 0; i < excluded.length; i++) if (p === excluded[i] || p.indexOf(excluded[i] + '/') === 0) return excluded[i];
     return '';
   }
-  // DomainToolBelt privacy rule: a name someone looked up never leaves the page. Lookup pages carry the
-  // name as the next path segment, and any domain-shaped segment is masked too. Only campaign
-  // parameters are kept from the query string.
-  var NAME_PAGES = { domain: 1, whois: 1, appraisal: 1, trademark: 1, 'x-card': 1 };
-  var FILE_EXT = /\.(html?|xml|txt|json|js|css|png|jpe?g|svg|webp|ico|pdf)$/i;
-  var NAME_LIKE = /^[^\s/]+\.[^\s/.]+$/;
-  var KEEP_PARAMS = /^(utm_source|utm_medium|utm_campaign|utm_term|utm_content|ref|via)$/;
-  function maskPath(p) {
-    var parts = p.split('/');
-    for (var i = 1; i < parts.length; i++) {
-      var seg = parts[i], prev = parts[i - 1].toLowerCase(), dec = seg;
-      if (!seg) continue;
-      try { dec = decodeURIComponent(seg); } catch (e) {}
-      if (NAME_PAGES[prev] || (NAME_LIKE.test(dec) && !FILE_EXT.test(dec))) parts[i] = ':name';
-    }
-    return parts.join('/');
-  }
+  // DomainToolBelt (owner's call 2026-11-02, temporary): names are no longer masked, so
+  // /domain/<name> and /tools/appraisal/<name> show the real name, and the typed search (?q=) is
+  // kept. Every other query parameter is dropped except campaign tags (no tokens or emails).
+  var KEEP_PARAMS = /^(q|utm_source|utm_medium|utm_campaign|utm_term|utm_content|ref|via)$/;
   function maskUrl(href, keepQuery) {
     try {
       var u = new URL(href, loc.href), q = [];
       if (keepQuery) u.searchParams.forEach(function (v, k) { if (KEEP_PARAMS.test(k)) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v)); });
-      return u.origin + maskPath(u.pathname) + (q.length ? '?' + q.join('&') : '');
+      return u.origin + u.pathname + (q.length ? '?' + q.join('&') : '');
     } catch (e) { return ''; }
   }
   var VID = 'ml_vid', SID = 'ml_sid', YEAR = 31536000, SESSION = 1800;
@@ -158,10 +145,8 @@
   }
 
   // ---- goals, outbound links, Dodo Payments checkout links
-  // DomainToolBelt privacy rule for goal properties: free text someone typed (query, keyword) is
-  // dropped and any name-shaped value (domain, example.com) is sent as ":name". Counts, flags,
-  // venues, pages and TLDs stay, so goals can still be split by them.
-  var DROP_PROPS = { query: 1, q: 1, keyword: 1, keywords: 1, email: 1 };
+  // Goal properties: names and typed searches are kept; emails are dropped and nested values skipped.
+  var DROP_PROPS = { email: 1 };
   function cleanProps(props) {
     if (!props || typeof props !== 'object') return undefined;
     var out = {}, n = 0;
@@ -169,10 +154,7 @@
       if (!Object.prototype.hasOwnProperty.call(props, k) || DROP_PROPS[k]) continue;
       var v = props[k];
       if (v === null || v === undefined || typeof v === 'object' || typeof v === 'function') continue;
-      if (typeof v === 'string') {
-        v = v.slice(0, 255);
-        if (k === 'domain' || k === 'name' || (v.charAt(0) !== '.' && NAME_LIKE.test(v) && !FILE_EXT.test(v))) v = ':name';
-      }
+      if (typeof v === 'string') v = v.slice(0, 255);
       out[k] = v;
       n++;
     }

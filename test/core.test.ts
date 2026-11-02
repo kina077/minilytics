@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { classify } from '../src/shared/sources';
 import { parseTiers, planInfo } from '../src/worker/billing';
-import { belongsTo, maskNames, maskOutbound, normalizePath } from '../src/worker/collect';
+import { belongsTo, normalizePath, outboundTarget, pagePath } from '../src/worker/collect';
 import type { Env } from '../src/worker/env';
 import { verifyStandardWebhook, verifyStripeWebhook } from '../src/worker/lib/crypto';
 import { filterSql, parseFilters } from '../src/worker/stats';
@@ -104,26 +104,21 @@ describe('Standard Webhooks (Dodo)', () => {
   });
 });
 
-describe('name masking (DomainToolBelt)', () => {
-  it('masks the name on lookup pages', () => {
-    expect(normalizePath('/domain/example.com')).toBe('/domain/:name');
-    expect(normalizePath('/tools/whois/example.com')).toBe('/tools/whois/:name');
-    expect(normalizePath('/tools/appraisal/bestname')).toBe('/tools/appraisal/:name');
-    expect(normalizePath('/tools/trademark/apple')).toBe('/tools/trademark/:name');
-    expect(normalizePath('/x-card/abc123')).toBe('/x-card/:name');
-    expect(normalizePath('/tools/whois/xn--80ak6aa92e.com')).toBe('/tools/whois/:name');
-  });
-  it('masks any domain-shaped segment and keeps normal pages', () => {
-    expect(maskNames('/foo/shop.io/bar')).toBe('/foo/:name/bar');
-    expect(normalizePath('/drops/expiring-today')).toBe('/drops/expiring-today');
-    expect(normalizePath('/tools/whois')).toBe('/tools/whois');
-    expect(normalizePath('/blog/post.html')).toBe('/blog/post.html');
+describe('full page paths (DomainToolBelt)', () => {
+  it('keeps the real name on lookup pages', () => {
+    expect(normalizePath('/domain/example.com')).toBe('/domain/example.com');
+    expect(normalizePath('/tools/appraisal/bestname')).toBe('/tools/appraisal/bestname');
+    expect(normalizePath('/tools/whois/example.com/')).toBe('/tools/whois/example.com');
     expect(normalizePath('/')).toBe('/');
   });
-  it('masks outbound marketplace links', () => {
-    expect(maskOutbound('https://dan.com/buy-domain/example.com')).toBe('https://dan.com/buy-domain/:name');
-    expect(maskOutbound('https://www.godaddy.com/domainsearch/find')).toBe('https://www.godaddy.com/domainsearch/find');
-    expect(maskOutbound('not a url')).toBeNull();
+  it('keeps the typed search and drops every other query parameter', () => {
+    expect(pagePath(new URL('https://domaintoolbelt.com/search?q=apple.io&token=x'))).toBe('/search?q=apple.io');
+    expect(pagePath(new URL('https://domaintoolbelt.com/drops?utm_source=x'))).toBe('/drops');
+    expect(pagePath(new URL('https://domaintoolbelt.com/search?q=%20'))).toBe('/search');
+  });
+  it('stores outbound links without their query', () => {
+    expect(outboundTarget('https://dan.com/buy-domain/example.com?aff=1')).toBe('https://dan.com/buy-domain/example.com');
+    expect(outboundTarget('not a url')).toBeNull();
   });
 });
 

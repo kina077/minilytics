@@ -55,24 +55,22 @@ function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
   } }
 }
 
-test('lookup pages are sent with the name masked', () => {
-  for (const [page, want] of [
-    ['https://domaintoolbelt.com/domain/example.com', 'https://domaintoolbelt.com/domain/:name'],
-    ['https://domaintoolbelt.com/tools/whois/secret-name.io', 'https://domaintoolbelt.com/tools/whois/:name'],
-    ['https://domaintoolbelt.com/tools/appraisal/bestname', 'https://domaintoolbelt.com/tools/appraisal/:name'],
-    ['https://domaintoolbelt.com/tools/trademark/apple', 'https://domaintoolbelt.com/tools/trademark/:name'],
-    ['https://domaintoolbelt.com/x-card/abc123', 'https://domaintoolbelt.com/x-card/:name'],
+test('lookup pages are sent with the real name', () => {
+  for (const page of [
+    'https://domaintoolbelt.com/domain/example.com',
+    'https://domaintoolbelt.com/tools/appraisal/bestname',
+    'https://domaintoolbelt.com/tools/whois/name.io',
   ]) {
     const { sent } = run(page)
     assert.equal(sent.length, 1)
     assert.equal(sent[0].t, 'pageview')
-    assert.equal(sent[0].u, want)
+    assert.equal(sent[0].u, page)
   }
 })
 
-test('query strings keep only campaign parameters', () => {
-  const { sent } = run('https://domaintoolbelt.com/tools/bulk-availability?q=hidden.com&utm_source=x&ref=launch')
-  assert.equal(sent[0].u, 'https://domaintoolbelt.com/tools/bulk-availability?utm_source=x&ref=launch')
+test('query strings keep the typed search and campaign parameters only', () => {
+  const { sent } = run('https://domaintoolbelt.com/search?q=apple.io&token=hidden&utm_source=x&ref=launch')
+  assert.equal(sent[0].u, 'https://domaintoolbelt.com/search?q=apple.io&utm_source=x&ref=launch')
   assert.ok(!JSON.stringify(sent).includes('hidden'))
 })
 
@@ -81,12 +79,12 @@ test('normal pages are unchanged', () => {
   assert.equal(run('https://domaintoolbelt.com/').sent[0].u, 'https://domaintoolbelt.com/')
 })
 
-test('referrer and outbound links are masked', () => {
+test('referrer and outbound links keep the path, not the query', () => {
   const { sent, click } = run('https://domaintoolbelt.com/', 'https://other-whois.com/whois/private.net?x=1')
-  assert.equal(sent[0].r, 'https://other-whois.com/whois/:name')
-  click('https://dan.com/buy-domain/example.com')
+  assert.equal(sent[0].r, 'https://other-whois.com/whois/private.net')
+  click('https://dan.com/buy-domain/example.com?aff=hidden')
   assert.equal(sent[1].t, 'outbound')
-  assert.equal(sent[1].n, 'https://dan.com/buy-domain/:name')
+  assert.equal(sent[1].n, 'https://dan.com/buy-domain/example.com')
 })
 
 test('account area sends no pageviews or outbound clicks', () => {
@@ -108,15 +106,13 @@ test('goals in the account area go out on the bare prefix only', () => {
   assert.ok(!JSON.stringify(sent).includes('secret'))
 })
 
-test('goal properties never carry a looked-up name or typed text', () => {
+test('goal properties keep names and searches, drop emails and nested values', () => {
   const { sent, window } = run('https://domaintoolbelt.com/search')
   window.minilytics('track', 'marketplace_click', {
-    page: 'search', marketplace: 'godaddy', action: 'buy', domain: 'secret.com',
-    query: 'secretword', keyword: 'secretword', other: 'hidden.io', tld: '.co.uk', count: 3, ok: true, nested: { a: 1 },
+    page: 'search', domain: 'apple.com', query: 'apple', email: 'a@hidden.com', tld: '.co.uk', count: 3, ok: true, nested: { a: 1 },
   })
   const g = sent.find((e) => e.t === 'goal')!
-  assert.deepEqual(g.p, { page: 'search', marketplace: 'godaddy', action: 'buy', domain: ':name', other: ':name', tld: '.co.uk', count: 3, ok: true })
-  assert.ok(!JSON.stringify(sent).includes('secret'))
+  assert.deepEqual(g.p, { page: 'search', domain: 'apple.com', query: 'apple', tld: '.co.uk', count: 3, ok: true })
   assert.ok(!JSON.stringify(sent).includes('hidden'))
 })
 
