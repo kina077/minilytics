@@ -18,6 +18,7 @@ type Sent = Record<string, any>
 
 function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
   const sent: Sent[] = []
+  const store: Record<string, string> = {}
   const url = new URL(href)
   const listeners: Record<string, Function[]> = {}
   const attrs: Record<string, string> = {
@@ -43,13 +44,13 @@ function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
   const ctx = {
     window, document, URL, URLSearchParams, Blob, JSON, Date, Math, String, Object, RegExp,
     encodeURIComponent, decodeURIComponent, setTimeout: () => 0, setInterval: () => 0,
-    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    localStorage: { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v }, removeItem: (k: string) => { delete store[k] } },
     crypto: window.crypto, screen: window.screen,
     fetch: (_u: string, o: any) => { sent.push(JSON.parse(o.body)); return { catch() {} } },
   }
   window.document = document
   vm.runInNewContext(SRC, ctx)
-  return { sent, window, click: (a: string) => {
+  return { sent, window, store, click: (a: string) => {
     const el = { closest: (sel: string) => (sel.startsWith('a[') ? { href: a } : null) }
     for (const f of listeners.click || []) f({ target: el })
   } }
@@ -119,4 +120,19 @@ test('goal properties keep names and searches, drop emails and nested values', (
 test('events go to the Worker, not our origin', () => {
   // fetch is called with the data-api endpoint; the sandbox records bodies only, so check the source wiring
   assert.ok(SRC.includes("script.getAttribute('data-api')"))
+})
+
+test('owner flag set after load (sign-in in an open tab) stops sending at once', () => {
+  const { sent, store, click } = run('https://domaintoolbelt.com/pricing')
+  const before = sent.length
+  assert.ok(before > 0)
+  store.ml_ignore = '1'
+  click('https://www.namecheap.com/')
+  assert.equal(sent.length, before)
+})
+
+test('preview sites are never tracked', () => {
+  const { sent, click } = run('https://preview-domaintoolbelt-main-site-x.domaintoolbelt.com/')
+  click('https://www.namecheap.com/')
+  assert.equal(sent.length, 0)
 })
