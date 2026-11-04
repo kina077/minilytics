@@ -93,8 +93,33 @@ export function renderLabel(dim: string, row: Pick<BreakdownRow, 'label' | 'extr
   }
 }
 
+/** Live URL for a page or exit-link row, so it can be opened from the list. Null for other tabs. */
+function rowUrl(dim: string, label: string | null, domain: string): string | null {
+  if (!label) return null;
+  if ((dim === 'page' || dim === 'entry_page') && label.startsWith('/')) return `https://${domain}${label}`;
+  if (dim === 'exit_link' && /^https?:\/\//.test(label)) return label;
+  return null;
+}
+
+function OpenLink({ href }: { href: string | null }) {
+  if (!href) return null;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="shrink-0 rounded px-1 text-stone-400 hover:bg-stone-200 hover:text-ink"
+      title="Open this page"
+      aria-label="Open this page in a new tab"
+      onClick={(e) => e.stopPropagation()}
+    >
+      ↗
+    </a>
+  );
+}
+
 function Bars({ rows, dim, tab, sort, limit, onPick, onExclude }: { rows: BreakdownRow[]; dim: string; tab: TabDef; sort: 'visitors' | 'revenue'; limit?: number; onPick?: (r: BreakdownRow) => void; onExclude?: (r: BreakdownRow) => void }) {
-  const { money } = useDash();
+  const { money, site } = useDash();
   const sorted = useMemo(() => [...rows].sort((a, b) => (b[sort] ?? 0) - (a[sort] ?? 0) || b.visitors - a.visitors), [rows, sort]);
   const shown = limit ? sorted.slice(0, limit) : sorted;
   const maxV = Math.max(1, ...rows.map((r) => r.visitors));
@@ -117,7 +142,10 @@ function Bars({ rows, dim, tab, sort, limit, onPick, onExclude }: { rows: Breakd
               {rw > 0 && <div className="rounded-r-lg bg-revenueSoft" style={{ width: `${rw}%` }} />}
             </div>
             <div className="absolute inset-0 hidden rounded-lg ring-1 ring-stone-300/70 group-hover:block" />
-            <div className="relative flex min-w-0 flex-1 items-center gap-2.5 px-3 text-[15px]">{renderLabel(dim, r)}</div>
+            <div className="relative flex min-w-0 flex-1 items-center gap-2.5 px-3 text-[15px]">
+              {renderLabel(dim, r)}
+              <OpenLink href={rowUrl(dim, r.label, site.domain)} />
+            </div>
             <div className="relative flex shrink-0 items-center gap-3 pr-3 text-[15px] font-medium">
               {tab.filter && onExclude && (
                 <button
@@ -218,7 +246,7 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
             <tbody>
               {filtered.map((r, i) => (
                 <tr key={i} className={`border-t border-stone-100 ${tab.filter ? 'cursor-pointer hover:bg-stone-50' : ''}`} onClick={() => pick(r)}>
-                  <td className="max-w-[320px] py-2"><div className="flex min-w-0 items-center gap-2">{renderLabel(active, r)}</div></td>
+                  <td className="max-w-[320px] py-2"><div className="flex min-w-0 items-center gap-2">{renderLabel(active, r)}<OpenLink href={rowUrl(active, r.label, site.domain)} /></div></td>
                   <td className="py-2 text-right">{fmtNumber(r.visitors)}</td>
                   <td className="py-2 text-right">{money(r.revenue)}</td>
                   <td className="py-2 text-right">{r.visitors ? fmtPct(r.customers / r.visitors, 1) : '—'}</td>

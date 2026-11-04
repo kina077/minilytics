@@ -40,10 +40,15 @@
     if (ig === 'true') localStorage.setItem('ml_ignore', '1');
     if (ig === 'false') localStorage.removeItem('ml_ignore');
   } catch (e) {}
-  var ignored = false;
-  try { ignored = localStorage.getItem('ml_ignore') === '1'; } catch (e) {}
+  // Read on every send, not once: the site sets the flag when the owner signs in, often in a tab
+  // whose tracker is already running (2026-11-04: a sign-in tab kept counting him for an hour).
+  function ignored() {
+    try { return localStorage.getItem('ml_ignore') === '1'; } catch (e) { return false; }
+  }
   var local = /^(localhost|127\.|0\.0\.0\.0|\[::1\]|.*\.local$)/.test(loc.hostname) || loc.protocol === 'file:';
-  if (!siteId || ignored || nav.webdriver || (local && !allowLocal)) {
+  // DomainToolBelt: PR preview sites (preview-*.domaintoolbelt.com) are testing, never real visitors.
+  var preview = /^preview-/.test(loc.hostname);
+  if (!siteId || ignored() || preview || nav.webdriver || (local && !allowLocal)) {
     w.minilytics = noop;
     w.minilytics.attribution = function () { return {}; };
     return;
@@ -93,6 +98,7 @@
   // (sign up, sign in, saved / monitored names are conversions), reported on the bare prefix
   // ("/dashboard", "/login") so no account URL, id or query ever leaves the page.
   function send(type, extra, beacon) {
+    if (ignored()) return;
     var ex = excludedPrefix(loc.pathname);
     if (ex && type !== 'goal') return;
     var id = ids();
