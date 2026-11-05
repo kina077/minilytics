@@ -531,7 +531,10 @@ export async function handlePaymentApi(c: Context<AppEnv>) {
 
 /**
  * Server-side goals (e.g. "signup" from your backend).
- * POST /api/v1/goals  { "visitor_id": "...", "name": "signup" }
+ * POST /api/v1/goals  { "visitor_id": "...", "name": "signup", "path"?: "/extension" }
+ * A visitor with no web session (e.g. a browser-extension user, whose events
+ * come through our API) still counts on the Goals card: the goal is stored with
+ * no session, so it adds no visitor, session or bounce to the other cards.
  */
 export async function handleGoalApi(c: Context<AppEnv>) {
   const site = await siteFromApiKey(c);
@@ -545,13 +548,19 @@ export async function handleGoalApi(c: Context<AppEnv>) {
   )
     .bind(site.id, vid)
     .first<{ id: string; exit_page: string }>();
-  if (!s) return c.json({ error: 'visitor not found' }, 404);
   const now = Date.now();
+  const props = b?.props ? JSON.stringify(b.props).slice(0, 1000) : null;
+  if (!s) {
+    await c.env.DB.prepare(
+      "INSERT INTO events (site_id, session_id, visitor_id, ts, type, name, path, props) VALUES (?, '', ?, ?, 'goal', ?, ?, ?)",
+    ).bind(site.id, vid, now, name, str(b?.path)?.slice(0, 200) ?? null, props).run();
+    return c.json({ ok: true, session: false });
+  }
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE sessions SET goals = goals + 1 WHERE site_id = ? AND id = ?').bind(site.id, s.id),
     c.env.DB.prepare(
       "INSERT INTO events (site_id, session_id, visitor_id, ts, type, name, path, props) VALUES (?, ?, ?, ?, 'goal', ?, ?, ?)",
-    ).bind(site.id, s.id, vid, now, name, s.exit_page, b?.props ? JSON.stringify(b.props).slice(0, 1000) : null),
+    ).bind(site.id, s.id, vid, now, name, s.exit_page, props),
   ]);
   return c.json({ ok: true });
 }
