@@ -15,8 +15,13 @@ const LOCKOUT_MS = 15 * 60_000;
 
 // ---------- public: tracking, webhooks, server-side API
 
-app.use('/api/event', cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], maxAge: 86400 }));
-app.post('/api/event', handleEvent);
+// DomainToolBelt: /e is the same endpoint for the first-party host (ml.domaintoolbelt.com). That zone's
+// WAF and API rate limit act on /api/*, so the tracker posts to /e there and never shares the
+// site's 25-per-10s /api budget or its referer rule.
+for (const path of ['/api/event', '/e']) {
+  app.use(path, cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], maxAge: 86400 }));
+  app.post(path, handleEvent);
+}
 app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
