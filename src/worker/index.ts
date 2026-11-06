@@ -1,7 +1,8 @@
 import { Hono, type Context, type Next } from 'hono';
 import { cors } from 'hono/cors';
+import { botStats, syncBots } from './bots';
 import { handleEvent } from './collect';
-import { forgetSite, type AppEnv, type Site } from './env';
+import { forgetSite, type AppEnv, type Env, type Site } from './env';
 import { clearSession, currentUser, googleCallback, googleStart, isHosted, requireUser, setSession, siteAccessSql } from './auth';
 import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
@@ -223,7 +224,7 @@ app.post('/api/sites/:id/rotate-key', async (c) => {
 app.delete('/api/sites/:id', async (c) => {
   const id = c.get('site').id;
   await c.env.DB.batch(
-    ['events', 'sessions', 'visitors', 'payments', 'funnels'].map((t) =>
+    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'bot_hits'].map((t) =>
       c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
     ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
   );
@@ -260,6 +261,10 @@ app.post('/api/sites/:id/pending-payments', async (c) => {
   return c.json({ ok: true });
 });
 app.post('/api/sites/:id/rematch', async (c) => c.json(await rematchPayments(c.env.DB, c.get('site'))));
+app.get('/api/sites/:id/bots', async (c) => {
+  const { site, range } = makeCtx(c);
+  return c.json(await botStats(c.env, site.id, range.from, range.to));
+});
 app.get('/api/sites/:id/realtime', async (c) => c.json(await realtime(c.env.DB, c.get('site'))));
 app.get('/api/sites/:id/customers', async (c) => c.json(await customers(makeCtx(c))));
 app.get('/api/sites/:id/visitors', async (c) => c.json(await visitors(makeCtx(c))));
@@ -315,4 +320,7 @@ app.all('*', async (c) => {
   return new Response(index.body, { status, headers });
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled: (_e: ScheduledController, env: Env, ctx: ExecutionContext) => ctx.waitUntil(syncBots(env)),
+};

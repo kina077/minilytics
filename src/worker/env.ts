@@ -30,6 +30,12 @@ export interface Env {
   MONTHLY_PRODUCT_ID?: string;
   MONTHLY_PRICE?: string;
   SUPPORT_EMAIL?: string;
+
+  // ---- DomainToolBelt: verified bots, optional. Both set = the Bots section fills hourly.
+  /** Cloudflare zone of the tracked site(s). */
+  CF_ZONE_ID?: string;
+  /** Cloudflare API token with Zone > Analytics > Read (`wrangler secret put CF_ANALYTICS_TOKEN`). */
+  CF_ANALYTICS_TOKEN?: string;
 }
 
 export interface Site {

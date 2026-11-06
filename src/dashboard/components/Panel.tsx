@@ -178,7 +178,7 @@ function Bars({ rows, dim, tab, sort, limit, onPick, onExclude }: { rows: Breakd
   );
 }
 
-export function Panel({ tabs }: { tabs: TabDef[] }) {
+export function Panel({ tabs, footer }: { tabs: TabDef[]; footer?: ReactNode }) {
   const { site, q, reloadKey, addFilter, excludeFilter, money } = useDash();
   const [saved, setActive] = usePref(`ml_tab_${tabs[0].dim}`, tabs[0].dim);
   const active = tabs.some((t) => t.dim === saved) ? saved : tabs[0].dim;
@@ -202,7 +202,7 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
   const filtered = (data ?? []).filter((r) => !search || (r.label ?? '').toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="card flex min-h-[560px] flex-col p-3">
+    <div className="card flex min-h-[560px] min-w-0 flex-col p-3">
       <div className="flex items-center justify-between gap-2 pb-3">
         <div className="tabs overflow-x-auto">
           {tabs.map((t) => (
@@ -229,6 +229,7 @@ export function Panel({ tabs }: { tabs: TabDef[] }) {
           ⛶ Details
         </button>
       )}
+      {footer}
       <Modal open={details} onClose={() => setDetails(false)} title={tab.label} width="max-w-3xl">
         <input className="input mb-4" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
         <div className="overflow-x-auto">

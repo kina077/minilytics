@@ -13,6 +13,9 @@
     // Static files skip the Worker. Anything else (client routes, unknown paths) runs it so missing pages return a real 404.
     "run_worker_first": ["/api/*", "/e"]
   },
+  // DomainToolBelt: verified bots are pulled from Cloudflare analytics at :07 every hour (see src/worker/bots.ts).
+  "triggers": { "crons": ["7 * * * *"] },
+  "vars": { "CF_ZONE_ID": "3e67fc27f595e35c51194c29d4e24724" },
   "d1_databases": [
     {
       "binding": "DB",
