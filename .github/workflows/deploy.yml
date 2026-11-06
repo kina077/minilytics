@@ -26,5 +26,4 @@ jobs:
       - name: Copy the bots analytics token to the Worker
         env:
           CF_ANALYTICS_TOKEN: ${{ secrets.CF_ANALYTICS_TOKEN }}
-        if: env.CF_ANALYTICS_TOKEN != ''
-        run: printf '%s' "$CF_ANALYTICS_TOKEN" | npx wrangler secret put CF_ANALYTICS_TOKEN
+        run: '[ -z "$CF_ANALYTICS_TOKEN" ] || printf "%s" "$CF_ANALYTICS_TOKEN" | npx wrangler secret put CF_ANALYTICS_TOKEN'
