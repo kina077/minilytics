@@ -66,6 +66,8 @@ export function Toolbar({
   onRefresh,
   onLive,
   loading,
+  hideBots,
+  onHideBots,
 }: {
   site: Site;
   sites: Site[];
@@ -74,6 +76,8 @@ export function Toolbar({
   overview: Overview | null;
   onRefresh: () => void;
   onLive: () => void;
+  hideBots: boolean;
+  onHideBots: (hide: boolean) => void;
   loading: boolean;
 }) {
   const [from, setFrom] = useState(q.from ?? '');
@@ -220,6 +224,11 @@ export function Toolbar({
           <path d="M21 3v5h-5" />
         </svg>
       </button>
+
+      <label className="ml-auto flex h-11 cursor-pointer items-center gap-2 px-2 text-base text-stone-600" title="Hide the verified bots section. Visitor numbers never include bots.">
+        <input type="checkbox" className="h-4 w-4 accent-stone-800" checked={hideBots} onChange={(e) => onHideBots(e.target.checked)} />
+        Exclude bots
+      </label>
     </div>
   );
 }

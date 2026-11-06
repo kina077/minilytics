@@ -1,6 +1,7 @@
 # Deploys the Worker to Cloudflare on every push to main (and by hand from the Actions tab).
 # Needs one repo secret: CLOUDFLARE_API_TOKEN (Cloudflare "Edit Cloudflare Workers" token template).
 # D1 migrations are applied separately (the token template has no D1 access).
+# Optional repo secret CF_ANALYTICS_TOKEN (Zone > Analytics > Read) is copied to the Worker for the verified-bots section.
 name: Deploy
 on:
   push:
@@ -22,3 +23,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npx wrangler deploy
+      - name: Copy the bots analytics token to the Worker
+        env:
+          CF_ANALYTICS_TOKEN: ${{ secrets.CF_ANALYTICS_TOKEN }}
+        run: '[ -z "$CF_ANALYTICS_TOKEN" ] || printf "%s" "$CF_ANALYTICS_TOKEN" | npx wrangler secret put CF_ANALYTICS_TOKEN'

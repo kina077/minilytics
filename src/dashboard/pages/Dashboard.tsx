@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { navigate } from '../App';
+import { BotsPanel } from '../components/BotsPanel';
 import { GoalsPanel } from '../components/GoalsPanel';
 import { LivePanel } from '../components/LivePanel';
 import { OverviewCard } from '../components/OverviewCard';
@@ -9,6 +10,7 @@ import { VisitorModal } from '../components/VisitorModal';
 import { qs, type Overview, type Site } from '../lib/api';
 import { DashContext, type Dash } from '../lib/context';
 import { fmtMoney } from '../lib/format';
+import { usePref } from '../lib/prefs';
 import { useApi } from '../lib/useApi';
 import { useQueryState } from '../lib/useQueryState';
 
@@ -39,6 +41,7 @@ export function Dashboard({ siteId }: { siteId: string }) {
   const [q, update] = useQueryState(siteId);
   const [reloadKey, setReloadKey] = useState(0);
   const [visitor, setVisitor] = useState<string | null>(null);
+  const [hideBots, setHideBots] = usePref('ml_hide_bots', false);
   const [live, setLive] = useState(() => new URLSearchParams(window.location.search).get('live') === '1');
 
   // "M" opens the live map, like DataFast.
@@ -112,6 +115,8 @@ export function Dashboard({ siteId }: { siteId: string }) {
           onRefresh={() => setReloadKey((k) => k + 1)}
           onLive={() => setLive(true)}
           loading={loading}
+          hideBots={hideBots}
+          onHideBots={setHideBots}
         />
 
         {Object.keys(q.filters).length > 0 && (
@@ -147,6 +152,7 @@ export function Dashboard({ siteId }: { siteId: string }) {
               { label: 'Campaign', dim: 'campaign', filter: 'utm_campaign' },
               { label: 'Keyword', dim: 'keyword', filter: 'utm_term' },
             ]}
+            footer={hideBots ? null : <BotsPanel />}
           />
           <Panel
             tabs={[
