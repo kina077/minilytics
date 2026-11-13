@@ -381,6 +381,47 @@ export async function customers(ctx: Ctx) {
   return res.results;
 }
 
+/** Pages of the visit before each goal row, in order: `{ [session_id]: ['/', '/pricing'] }`. */
+export function pathsBySession(rows: { session_id: string; path: string }[], max = 15): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const r of rows) {
+    const list = (out[r.session_id] ??= []);
+    if (list.length < max && list[list.length - 1] !== r.path) list.push(r.path);
+  }
+  return out;
+}
+
+/** Visitors who reached `goal` (default signed_up) in the period, with source and the pages of that visit before it. */
+export async function goalJourneys(ctx: Ctx, goal: string) {
+  const { db, site, range } = ctx;
+  const f = filterSql(ctx.filters);
+  const goals = `SELECT g.session_id, MIN(g.ts) AS ts FROM events g JOIN sessions s ON s.site_id = g.site_id AND s.id = g.session_id
+     WHERE g.site_id = ? AND g.type = 'goal' AND g.name = ? AND g.ts >= ? AND g.ts < ?${f.sql}
+     GROUP BY g.session_id ORDER BY ts DESC LIMIT 200`;
+  const params = [site.id, goal, range.from, range.to, ...f.params];
+  const [rows, pages] = await db.batch([
+    db
+      .prepare(
+        `SELECT t.ts, t.session_id, s.visitor_id, v.first_seen, v.name, v.email,
+                s.source, s.referrer_domain, s.utm_campaign, s.ref, s.country, s.city, s.device, s.os, s.browser,
+                (SELECT COUNT(*) FROM sessions s2 WHERE s2.site_id = s.site_id AND s2.visitor_id = s.visitor_id AND s2.started_at <= t.ts) AS visits
+         FROM (${goals}) t
+         JOIN sessions s ON s.site_id = ? AND s.id = t.session_id
+         LEFT JOIN visitors v ON v.site_id = s.site_id AND v.id = s.visitor_id
+         ORDER BY t.ts DESC`,
+      )
+      .bind(...params, site.id),
+    db
+      .prepare(
+        `SELECT e.session_id, e.path FROM events e JOIN (${goals}) t ON e.session_id = t.session_id
+         WHERE e.site_id = ? AND e.type = 'pageview' AND e.ts <= t.ts ORDER BY e.ts`,
+      )
+      .bind(...params, site.id),
+  ]);
+  const paths = pathsBySession(pages.results as { session_id: string; path: string }[]);
+  return (rows.results as any[]).map((r) => ({ ...r, path: paths[r.session_id] ?? [] }));
+}
+
 /** Recent visitors in the period (the "Users" tab). */
 export async function visitors(ctx: Ctx) {
   const w = sessionsWhere(ctx);

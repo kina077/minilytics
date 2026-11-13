@@ -8,7 +8,7 @@ import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
-import { breakdown, customers, funnel, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
+import { breakdown, customers, funnel, goalJourneys, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 
 const app = new Hono<AppEnv>();
 const MAX_FAILURES = 10;
@@ -267,6 +267,9 @@ app.get('/api/sites/:id/bots', async (c) => {
 });
 app.get('/api/sites/:id/realtime', async (c) => c.json(await realtime(c.env.DB, c.get('site'))));
 app.get('/api/sites/:id/customers', async (c) => c.json(await customers(makeCtx(c))));
+app.get('/api/sites/:id/goal-journeys', async (c) =>
+  c.json(await goalJourneys(makeCtx(c), (c.req.query('goal') || 'signed_up').slice(0, 200))),
+);
 app.get('/api/sites/:id/visitors', async (c) => c.json(await visitors(makeCtx(c))));
 app.get('/api/sites/:id/visitors/:vid', async (c) =>
   c.json(await visitorProfile(c.env.DB, c.get('site'), c.req.param('vid'))),
