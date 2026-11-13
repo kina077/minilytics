@@ -29,7 +29,7 @@ export function GoalsPanel({ totalVisitors }: { totalVisitors: number }) {
       {tab === 'goal' && <Goals totalVisitors={totalVisitors} />}
       {tab === 'funnel' && <Funnels />}
       {tab === 'user' && <Users search={search} />}
-      {tab === 'journey' && <Journey search={search} />}
+      {tab === 'journey' && <JourneyTabs search={search} />}
     </div>
   );
 }
@@ -261,6 +261,74 @@ const MATCH_LABELS: Record<string, string> = {
   email: 'email',
   timing: 'checkout click timing',
 };
+
+function JourneyTabs({ search }: { search: string }) {
+  const [kind, setKind] = usePref<'signup' | 'customer'>('ml_journey_kind', 'signup');
+  return (
+    <>
+      <div className="tabs mb-3 ml-3 w-fit">
+        {(['signup', 'customer'] as const).map((k) => (
+          <button key={k} className={`tab ${kind === k ? 'tab-active' : ''}`} onClick={() => setKind(k)}>
+            {k === 'signup' ? 'Sign-ups' : 'Customers'}
+          </button>
+        ))}
+      </div>
+      {kind === 'signup' ? <SignupJourney search={search} /> : <Journey search={search} />}
+    </>
+  );
+}
+
+/** Who fired the signed_up goal, where they came from, and the pages of that visit up to the sign-up. */
+function SignupJourney({ search }: { search: string }) {
+  const { site, q, reloadKey, openVisitor } = useDash();
+  const [all, setAll] = useState(false);
+  const { data } = useApi<any[]>(`/api/sites/${site.id}/goal-journeys?${qs(q, { goal: 'signed_up' })}`, reloadKey);
+  if (!data) return <div className="h-40 animate-pulse" />;
+  if (!data.length) return <div className="p-8 text-center text-sm text-stone-500">No sign-ups in this period. Try a wider date range.</div>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] text-[15px]">
+        <thead>
+          <tr className="text-left text-sm text-stone-500">
+            <th className="px-3 pb-3 font-medium">Visitor</th>
+            <th className="pb-3 font-medium">Source</th>
+            <th className="pb-3 font-medium">Pages before sign-up</th>
+            <th className="pb-3 font-medium">Time to sign up</th>
+            <th className="pb-3 font-medium">Signed up at</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data
+            .filter((r) => matches(r, search) || r.path.some((p: string) => p.toLowerCase().includes(search.toLowerCase())))
+            .slice(0, all || search ? undefined : 10)
+            .map((r) => (
+              <tr key={r.session_id} className="cursor-pointer border-t border-stone-100 hover:bg-stone-50" onClick={() => openVisitor(r.visitor_id)}>
+                <td className="px-3 py-4">
+                  <VisitorCell id={r.visitor_id} name={r.name} email={r.email} country={r.country} city={null} device={r.device} os={r.os} browser={r.browser} />
+                </td>
+                <td className="py-4">
+                  <div className="flex items-center gap-2">
+                    <SourceIcon source={r.source} domain={r.referrer_domain} />
+                    <div>
+                      <div>{r.source}</div>
+                      {(r.utm_campaign || r.ref) && <div className="text-xs text-stone-500">{r.utm_campaign || r.ref}</div>}
+                    </div>
+                  </div>
+                </td>
+                <td className="max-w-[360px] py-4 pr-3 text-sm text-stone-700">{r.path.length ? r.path.join(' › ') : '—'}</td>
+                <td className="py-4">
+                  {r.first_seen ? fmtAgo(r.ts - r.first_seen) : '—'}
+                  {r.visits > 0 && <div className="text-xs text-stone-500">{r.visits} visit{r.visits > 1 ? 's' : ''}</div>}
+                </td>
+                <td className="py-4">{fmtDateTime(r.ts, site.timezone)}</td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
+      {!search && <ShowAll total={data.length} shown={all ? data.length : 10} onClick={() => setAll(true)} />}
+    </div>
+  );
+}
 
 function Journey({ search }: { search: string }) {
   const { site, q, reloadKey, money, openVisitor } = useDash();

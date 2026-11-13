@@ -5,7 +5,7 @@ import { parseTiers, planInfo } from '../src/worker/billing';
 import { belongsTo, normalizePath, outboundTarget, pagePath } from '../src/worker/collect';
 import type { Env } from '../src/worker/env';
 import { verifyStandardWebhook, verifyStripeWebhook } from '../src/worker/lib/crypto';
-import { filterSql, parseFilters } from '../src/worker/stats';
+import { filterSql, parseFilters, pathsBySession } from '../src/worker/stats';
 import { bucketLabels, resolveRange, startOfDay, tzOffset } from '../src/worker/lib/time';
 import { isBot, parseUA } from '../src/worker/lib/ua';
 
@@ -184,5 +184,19 @@ describe('exclude filters', () => {
     expect(sql).toContain('s.country IS NOT NULL');
     expect(sql).toContain('NOT EXISTS');
     expect(params).toEqual(['DZ', '/x']);
+  });
+});
+
+describe('pathsBySession', () => {
+  it('keeps order per visit, drops reload repeats, caps length', () => {
+    const rows = [
+      { session_id: 'a', path: '/' },
+      { session_id: 'b', path: '/login' },
+      { session_id: 'a', path: '/' },
+      { session_id: 'a', path: '/pricing' },
+      { session_id: 'a', path: '/login' },
+    ];
+    expect(pathsBySession(rows)).toEqual({ a: ['/', '/pricing', '/login'], b: ['/login'] });
+    expect(pathsBySession(rows, 2).a).toEqual(['/', '/pricing']);
   });
 });
