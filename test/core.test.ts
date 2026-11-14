@@ -45,6 +45,8 @@ describe('user agents', () => {
     expect(isBot('Mozilla/5.0 (compatible; Googlebot/2.1)')).toBe(true);
     expect(isBot('Mozilla/5.0 HeadlessChrome/120')).toBe(true);
     expect(isBot('')).toBe(true);
+    // Search Console's URL test renders and sends beacons with no 'bot' in its UA (2026-11-14).
+    expect(isBot('Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0 Mobile Safari/537.36 (compatible; Google-InspectionTool/1.0)')).toBe(true);
     expect(isBot('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/129 Safari/537.36')).toBe(false);
   });
 });
