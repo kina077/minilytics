@@ -132,8 +132,10 @@
 
   // ---- pageviews (including single-page-app navigation)
   var lastPage = null, firstView = true;
+  // DomainToolBelt (owner, 2026-11-20): a view is a new path. Search typing and sidebar filters
+  // only change the query (router.replace) and are not views; preset pills change the path.
   function pageview() {
-    var page = loc.pathname + loc.search;
+    var page = loc.pathname;
     if (page === lastPage) return;
     if (lastPage !== null) flushTime(false);
     lastPage = page;
