@@ -50,7 +50,7 @@ function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
   }
   window.document = document
   vm.runInNewContext(SRC, ctx)
-  return { sent, window, store, click: (a: string) => {
+  return { sent, window, store, listeners, click: (a: string) => {
     const el = { closest: (sel: string) => (sel.startsWith('a[') ? { href: a } : null) }
     for (const f of listeners.click || []) f({ target: el })
   } }
@@ -135,4 +135,21 @@ test('preview sites are never tracked', () => {
   const { sent, click } = run('https://preview-domaintoolbelt-main-site-x.domaintoolbelt.com/')
   click('https://www.namecheap.com/')
   assert.equal(sent.length, 0)
+})
+
+test('query-only changes (search, filters) are not new pageviews; path changes (pills) are', () => {
+  const { sent, window, listeners } = run('https://domaintoolbelt.com/hand-reg')
+  const go = (href: string) => {
+    const u = new URL(href)
+    Object.assign(window.location, { href: u.href, pathname: u.pathname, search: u.search })
+    for (const f of listeners.popstate || []) f()
+  }
+  go('https://domaintoolbelt.com/hand-reg?search=en')
+  go('https://domaintoolbelt.com/hand-reg?search=enown&tld=.net&hidePremium=true')
+  assert.equal(sent.filter(s => s.t === 'pageview').length, 1)
+  go('https://domaintoolbelt.com/hand-reg/hidden-gems')
+  go('https://domaintoolbelt.com/hand-reg/hidden-gems?page=2')
+  const views = sent.filter(s => s.t === 'pageview')
+  assert.equal(views.length, 2)
+  assert.equal(views[1].u, 'https://domaintoolbelt.com/hand-reg/hidden-gems')
 })
