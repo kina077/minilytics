@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import type { AppEnv } from '../src/worker/env';
-import { handleReplay, listReplays } from '../src/worker/replay';
+import { handleReplay, listReplays, replayEvents } from '../src/worker/replay';
 
 /** Just enough of D1: the site lookup, the replay size lookup, and the two writes. */
 function fakeDb(siteBytes = 0) {
@@ -88,5 +88,21 @@ describe('listReplays', () => {
     const { sql, args } = await sqlOf({ country: 'DE' }, 'vid-12345678');
     expect(sql).not.toContain('s.country = ?');
     expect(args).toEqual(['site1', 'vid-12345678']);
+  });
+});
+
+describe('replayEvents', () => {
+  it('joins chunks from `from` on and says which chunk comes next', async () => {
+    const rows = [
+      { seq: 2, data: gzipSync('[{"type":3,"timestamp":2}]') },
+      { seq: 3, data: new Uint8Array([1, 2, 3]) }, // broken chunk: skipped, still counted
+    ];
+    let bound: unknown[] = [];
+    const db = {
+      prepare: () => ({ bind: (...a: unknown[]) => ((bound = a), { all: async () => ({ results: rows.map((r) => ({ seq: r.seq, data: [...r.data] })) }) }) }),
+    } as unknown as D1Database;
+    const res = await replayEvents(db, { id: 'site1' } as any, 'rid-12345678', 2);
+    expect(bound).toEqual(['rid-12345678', 'site1', 2]);
+    expect(await res.json()).toEqual({ next: 4, events: [{ type: 3, timestamp: 2 }] });
   });
 });

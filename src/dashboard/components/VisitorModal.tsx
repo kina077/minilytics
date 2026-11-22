@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { displayName } from '../../shared/names';
 import { useDash } from '../lib/context';
 import { countryName, fmtAgo, fmtDateTime, fmtDuration } from '../lib/format';
 import { useApi } from '../lib/useApi';
 import { Avatar, BrowserIcon, DeviceIcon, Flag, OSIcon, SourceIcon } from './Icons';
 import { Modal } from './Modal';
-import { ReplayList, type ReplayRow } from './ReplaysPanel';
+import { PlayIcon, ReplayList, ReplayModal, type ReplayRow } from './ReplaysPanel';
 
 interface Profile {
   visitor: { id: string; first_seen: number; name: string | null; email: string | null; user_id: string | null } | null;
@@ -18,6 +19,7 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
   // The parent remounts this per visitor (key), so `data` always belongs to `visitorId`.
   const { data: p } = useApi<Profile>(visitorId ? `/api/sites/${site.id}/visitors/${visitorId}` : null);
   const { data: replays } = useApi<ReplayRow[]>(visitorId ? `/api/sites/${site.id}/replays?vid=${encodeURIComponent(visitorId)}` : null);
+  const [watching, setWatching] = useState<ReplayRow | null>(null);
   const last = p?.sessions[0];
   const firstSession = p?.sessions[p.sessions.length - 1];
   const paid = p?.payments.reduce((a, x) => a + x.amount, 0) ?? 0;
@@ -55,6 +57,15 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
                   <span className="flex items-center gap-1">
                     <BrowserIcon name={last.browser} size={15} /> {last.browser}
                   </span>
+                  {replays?.[0] && (
+                    <button
+                      className="flex items-center gap-1 rounded-md bg-stone-100 px-2 py-0.5 font-medium text-ink hover:bg-stone-200"
+                      onClick={() => setWatching(replays[0])}
+                      title="Watch their latest replay"
+                    >
+                      <PlayIcon /> Replay
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -137,6 +148,7 @@ export function VisitorModal({ visitorId, onClose }: { visitorId: string | null;
           </div>
         </div>
       )}
+      <ReplayModal replay={watching} onClose={() => setWatching(null)} />
     </Modal>
   );
 }

@@ -302,7 +302,9 @@ app.get('/api/sites/:id/replays', async (c) => {
   const { site, range, filters } = makeCtx(c);
   return c.json(await listReplays(c.env.DB, site, range.from, range.to, filters, c.req.query('vid') || undefined));
 });
-app.get('/api/sites/:id/replays/:rid', async (c) => replayEvents(c.env.DB, c.get('site'), c.req.param('rid')));
+app.get('/api/sites/:id/replays/:rid', async (c) =>
+  replayEvents(c.env.DB, c.get('site'), c.req.param('rid'), Math.max(0, Math.floor(Number(c.req.query('from')) || 0))),
+);
 
 app.get('/api/sites/:id/funnels', async (c) => {
   const res = await c.env.DB.prepare('SELECT * FROM funnels WHERE site_id = ? ORDER BY created_at').bind(c.get('site').id).all();
