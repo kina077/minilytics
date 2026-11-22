@@ -169,6 +169,9 @@ test('replay recorder loads only on data-replay pages, with the /r endpoint', ()
     assert.equal(run('https://domaintoolbelt.com' + p, '', '/dashboard,/auth', '/pricing,/login,/dashboard').scripts.length, 0, p)
   }
   assert.equal(run('https://domaintoolbelt.com/pricing').scripts.length, 0, 'no data-replay attribute, no recorder')
+  // '/' means the home page only, not every page
+  assert.equal(run('https://domaintoolbelt.com/', '', '/dashboard,/auth', '/,/pricing').scripts.length, 1)
+  assert.equal(run('https://domaintoolbelt.com/domain/example.com', '', '/dashboard,/auth', '/,/pricing').scripts.length, 0)
 })
 
 test('replay is switched off when the visitor leaves the replay pages', () => {
