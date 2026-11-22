@@ -5,7 +5,7 @@ import type { AppEnv } from '../src/worker/env';
 import { handleReplay } from '../src/worker/replay';
 
 /** Just enough of D1: the site lookup, the replay size lookup, and the two writes. */
-function fakeDb() {
+function fakeDb(siteBytes = 0) {
   const writes: unknown[][] = [];
   const db = {
     prepare(sql: string) {
@@ -17,6 +17,7 @@ function fakeDb() {
         },
         async first() {
           if (sql.includes('FROM sites')) return { id: 'test-site-1', domain: 'domaintoolbelt.com', owner_id: null };
+          if (sql.includes('SUM(bytes)')) return { b: siteBytes };
           return null;
         },
         sql,
@@ -30,8 +31,8 @@ function fakeDb() {
   return { db: db as unknown as D1Database, writes };
 }
 
-async function post(query: string, body: Uint8Array, origin = 'https://domaintoolbelt.com') {
-  const { db, writes } = fakeDb();
+async function post(query: string, body: Uint8Array, origin = 'https://domaintoolbelt.com', siteBytes = 0) {
+  const { db, writes } = fakeDb(siteBytes);
   const app = new Hono<AppEnv>().post('/r', handleReplay);
   const req = new Request('https://ml.domaintoolbelt.com/r?' + query, {
     method: 'POST',
@@ -59,5 +60,10 @@ describe('POST /r', () => {
     const plain = await post(ok, new TextEncoder().encode('[]'));
     expect(plain.status).toBe(400);
     expect(plain.writes).toEqual([]);
+  });
+  it('starts no new replay once the site stores 300 MB', async () => {
+    const full = await post(ok, chunk, 'https://domaintoolbelt.com', 301 * 1024 * 1024);
+    expect(full.status).toBe(202);
+    expect(full.writes).toEqual([]);
   });
 });

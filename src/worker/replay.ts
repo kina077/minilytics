@@ -9,6 +9,8 @@ const MAX_CHUNK = 512 * 1024;
 const MAX_CHUNKS = 200;
 // Gzip packs rrweb events ~10x, so 2 MB stored is ~20 MB of JSON when a replay is opened (Worker memory is 128 MB).
 const MAX_REPLAY = 2 * 1024 * 1024;
+// Replays share the stats database (500 MB on the free plan): stop starting new ones past 300 MB.
+const MAX_SITE = 300 * 1024 * 1024;
 export const KEEP_MS = 7 * 86_400_000;
 
 /** POST /r?w&rid&seq&sid&vid&p, body = one gzip chunk of rrweb events (js/replay.js). */
@@ -40,6 +42,10 @@ export async function handleReplay(c: Context<AppEnv>) {
   const db = c.env.DB;
   const prev = await db.prepare('SELECT site_id, bytes FROM replays WHERE id = ?').bind(q.rid).first<{ site_id: string; bytes: number }>();
   if (prev && (prev.site_id !== site.id || prev.bytes + data.byteLength > MAX_REPLAY)) return c.body(null, 202);
+  if (!prev) {
+    const total = await db.prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM replays WHERE site_id = ?').bind(site.id).first<{ b: number }>();
+    if ((total?.b ?? 0) > MAX_SITE) return c.body(null, 202);
+  }
 
   const now = Date.now();
   await db.batch([
