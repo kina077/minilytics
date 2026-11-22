@@ -8,8 +8,9 @@ import { Modal } from './Modal';
 
 const ReplayPlayer = lazy(() => import('./ReplayPlayer'));
 
-interface ReplayRow {
+export interface ReplayRow {
   id: string;
+  session_id: string;
   path: string | null;
   started_at: number;
   last_at: number;
@@ -21,14 +22,12 @@ interface ReplayRow {
   device: string | null;
 }
 
-/** DomainToolBelt: session recordings from the data-replay pages, kept 7 days. */
+/** DomainToolBelt: session recordings from the data-replay pages that match the dashboard filters, kept 7 days. */
 export function ReplaysPanel() {
   const { site, q, reloadKey, openVisitor } = useDash();
   const [all, setAll] = useState(false);
-  const [open, setOpen] = useState<ReplayRow | null>(null);
-  const { data } = useApi<ReplayRow[]>(`/api/sites/${site.id}/replays?${qs({ ...q, filters: {} })}`, reloadKey);
+  const { data } = useApi<ReplayRow[]>(`/api/sites/${site.id}/replays?${qs(q)}`, reloadKey);
   if (!data) return null;
-  const rows = all ? data : data.slice(0, 10);
 
   return (
     <div className="card p-3">
@@ -36,7 +35,23 @@ export function ReplaysPanel() {
         <span className="font-semibold">Replays</span>
         <span className="text-xs text-stone-400">Last 7 days kept · typed text hidden</span>
       </div>
-      {data.length === 0 && <p className="px-3 py-2 text-sm text-stone-400">No replays in this period</p>}
+      {data.length === 0 && <p className="px-3 py-2 text-sm text-stone-400">No replays for this period and these filters</p>}
+      <ReplayList rows={all ? data : data.slice(0, 10)} onVisitor={openVisitor} />
+      {data.length > 10 && (
+        <button className="mx-auto mt-3 flex text-xs font-semibold uppercase tracking-wider text-stone-500 hover:text-ink" onClick={() => setAll((a) => !a)}>
+          {all ? 'Show fewer' : `Show all ${data.length}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Rows with a Play button; also used in the visitor profile (no onVisitor there). */
+export function ReplayList({ rows, onVisitor }: { rows: ReplayRow[]; onVisitor?: (vid: string) => void }) {
+  const { site } = useDash();
+  const [open, setOpen] = useState<ReplayRow | null>(null);
+  return (
+    <>
       <div className="space-y-1">
         {rows.map((r) => (
           <div key={r.id} className="flex h-10 items-center gap-3 rounded-lg px-3 text-[15px] hover:bg-stone-50">
@@ -50,17 +65,16 @@ export function ReplaysPanel() {
               <DeviceIcon name={r.device} />
             </span>
             <span className="w-14 shrink-0 text-right text-stone-500">{fmtDuration(r.last_at - r.started_at)}</span>
-            <button className="hidden w-36 shrink-0 text-right text-sm text-stone-500 hover:text-ink sm:block" onClick={() => openVisitor(r.visitor_id)}>
+            <button
+              className="hidden w-36 shrink-0 text-right text-sm text-stone-500 enabled:hover:text-ink sm:block"
+              disabled={!onVisitor}
+              onClick={() => onVisitor?.(r.visitor_id)}
+            >
               {fmtDateTime(r.started_at, site.timezone)}
             </button>
           </div>
         ))}
       </div>
-      {data.length > 10 && (
-        <button className="mx-auto mt-3 flex text-xs font-semibold uppercase tracking-wider text-stone-500 hover:text-ink" onClick={() => setAll((a) => !a)}>
-          {all ? 'Show fewer' : `Show all ${data.length}`}
-        </button>
-      )}
       <Modal open={!!open} onClose={() => setOpen(null)} width="max-w-5xl" title={open?.path ?? 'Replay'}>
         {open && (
           <Suspense fallback={<div className="min-h-[200px]" />}>
@@ -68,6 +82,6 @@ export function ReplaysPanel() {
           </Suspense>
         )}
       </Modal>
-    </div>
+    </>
   );
 }

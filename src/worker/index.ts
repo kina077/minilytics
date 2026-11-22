@@ -299,8 +299,8 @@ app.get('/api/sites/:id/visitors/:vid', async (c) =>
 );
 
 app.get('/api/sites/:id/replays', async (c) => {
-  const { site, range } = makeCtx(c);
-  return c.json(await listReplays(c.env.DB, site, range.from, range.to));
+  const { site, range, filters } = makeCtx(c);
+  return c.json(await listReplays(c.env.DB, site, range.from, range.to, filters, c.req.query('vid') || undefined));
 });
 app.get('/api/sites/:id/replays/:rid', async (c) => replayEvents(c.env.DB, c.get('site'), c.req.param('rid')));
 

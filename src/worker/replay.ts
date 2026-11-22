@@ -4,6 +4,7 @@ import { belongsTo, isId } from './collect';
 import { getSite, type AppEnv, type Site } from './env';
 import { isOwnerVisit } from './owner';
 import { isBot } from './lib/ua';
+import { filterSql, type Filters } from './stats';
 
 const MAX_CHUNK = 512 * 1024;
 const MAX_CHUNKS = 200;
@@ -60,15 +61,16 @@ export async function handleReplay(c: Context<AppEnv>) {
   return c.body(null, 202);
 }
 
-/** Recordings that started in the period, newest first, with the visit's country and device. */
-export async function listReplays(db: D1Database, site: Site, from: number, to: number) {
+/** Recordings that started in the period and match the dashboard filters, newest first; or all of one visitor's. */
+export async function listReplays(db: D1Database, site: Site, from: number, to: number, filters: Filters, vid?: string) {
+  const f = vid ? { sql: ' AND r.visitor_id = ?', params: [vid] } : filterSql(filters);
   const r = await db
     .prepare(
-      `SELECT r.id, r.path, r.started_at, r.last_at, r.bytes, r.visitor_id, s.country, s.browser, s.os, s.device
+      `SELECT r.id, r.session_id, r.path, r.started_at, r.last_at, r.bytes, r.visitor_id, s.country, s.browser, s.os, s.device
        FROM replays r LEFT JOIN sessions s ON s.site_id = r.site_id AND s.id = r.session_id
-       WHERE r.site_id = ? AND r.started_at >= ? AND r.started_at < ? ORDER BY r.started_at DESC LIMIT 200`,
+       WHERE r.site_id = ?${vid ? '' : ' AND r.started_at >= ? AND r.started_at < ?'}${f.sql} ORDER BY r.started_at DESC LIMIT 200`,
     )
-    .bind(site.id, from, to)
+    .bind(site.id, ...(vid ? [] : [from, to]), ...f.params)
     .all();
   return r.results;
 }
