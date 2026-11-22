@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useDash } from '../lib/context';
 import { countryName, fmtAgo } from '../lib/format';
 import { Avatar, DeviceIcon, Flag, SourceIcon } from './Icons';
+import { PlayIcon, ReplayModal } from './ReplaysPanel';
 
 interface LiveVisitor {
   visitor_id: string;
@@ -16,6 +17,7 @@ interface LiveVisitor {
   pageviews: number;
   name: string | null;
   email: string | null;
+  replay_id: string | null;
 }
 
 interface FeedItem {
@@ -43,6 +45,7 @@ export function LivePanel({ onMap }: { onMap: () => void }) {
   const [data, setData] = useState<Realtime | null>(null);
   const [error, setError] = useState(false);
   const [, tick] = useState(0);
+  const [watching, setWatching] = useState<{ id: string; path: string | null; live: true } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -113,6 +116,27 @@ export function LivePanel({ onMap }: { onMap: () => void }) {
                       <Flag cc={v.country} size={14} />
                       <DeviceIcon name={v.device} size={14} />
                       <SourceIcon source={v.source} size={14} />
+                      {v.replay_id && (
+                        // A span, not a button: the whole row is already a button (opens the profile).
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title="Watch live (about 30 s behind)"
+                          className="rounded p-0.5 text-rose-500 hover:bg-rose-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setWatching({ id: v.replay_id!, path: v.page, live: true });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter' && e.key !== ' ') return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setWatching({ id: v.replay_id!, path: v.page, live: true });
+                          }}
+                        >
+                          <PlayIcon />
+                        </span>
+                      )}
                     </span>
                     <span className="block truncate text-xs text-stone-500">
                       on <code>{v.page ?? '/'}</code> · {v.pageviews} page{v.pageviews === 1 ? '' : 's'}
@@ -154,6 +178,7 @@ export function LivePanel({ onMap }: { onMap: () => void }) {
           </div>
         </div>
       )}
+      <ReplayModal replay={watching} onClose={() => setWatching(null)} />
     </div>
   );
 }

@@ -513,7 +513,7 @@ export async function funnel(ctx: Ctx, steps: FunnelStep[]) {
 export async function realtime(db: D1Database, site: Site, now = Date.now()) {
   const ACTIVE_MS = 5 * 60_000;
   const FEED_MS = 30 * 60_000;
-  const [visitors, events, payments] = await db.batch([
+  const [visitors, events, payments, replays] = await db.batch([
     db
       .prepare(
         `SELECT s.visitor_id, s.id AS session_id, s.lat, s.lon, s.country, s.region, s.city, s.device, s.browser, s.os,
@@ -543,11 +543,16 @@ export async function realtime(db: D1Database, site: Site, now = Date.now()) {
          ORDER BY p.ts DESC LIMIT 50`,
       )
       .bind(site.id, now - FEED_MS),
+    // DomainToolBelt: replays of visits that may still be live, so the Live list can offer Play.
+    db.prepare('SELECT session_id, id FROM replays WHERE site_id = ? AND started_at > ? ORDER BY started_at').bind(site.id, now - 6 * 3_600_000),
   ]);
+  const replayOf = new Map((replays.results as { session_id: string; id: string }[]).map((r) => [r.session_id, r.id]));
 
   // One marker per visitor (their most recent visit).
   const seen = new Set<string>();
-  const active = (visitors.results as any[]).filter((v) => !seen.has(v.visitor_id) && seen.add(v.visitor_id));
+  const active = (visitors.results as any[])
+    .filter((v) => !seen.has(v.visitor_id) && seen.add(v.visitor_id))
+    .map((v) => ({ ...v, replay_id: replayOf.get(v.session_id) ?? null }));
 
   const feed = [
     ...(events.results as any[]).map((e) => ({

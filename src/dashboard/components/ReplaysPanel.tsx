@@ -75,13 +75,34 @@ export function ReplayList({ rows, onVisitor }: { rows: ReplayRow[]; onVisitor?:
           </div>
         ))}
       </div>
-      <Modal open={!!open} onClose={() => setOpen(null)} width="max-w-5xl" title={open?.path ?? 'Replay'}>
-        {open && (
-          <Suspense fallback={<div className="min-h-[200px]" />}>
-            <ReplayPlayer siteId={site.id} id={open.id} />
-          </Suspense>
-        )}
-      </Modal>
+      <ReplayModal replay={open} onClose={() => setOpen(null)} />
     </>
+  );
+}
+
+/** A replay is "live" while its visit may still be going: the last part arrived under 2 minutes ago. */
+const LIVE_MS = 2 * 60_000;
+
+/** The player in a modal. Also opened from the visitor profile and the Live list. */
+export function ReplayModal({ replay, onClose }: { replay: { id: string; path?: string | null; last_at?: number; live?: boolean } | null; onClose: () => void }) {
+  const { site } = useDash();
+  const live = !!replay && (replay.live || (replay.last_at !== undefined && Date.now() - replay.last_at < LIVE_MS));
+  return (
+    <Modal open={!!replay} onClose={onClose} width="max-w-5xl" title={(replay?.path ?? 'Replay') + (live ? ' · live, about 30 s behind' : '')}>
+      {replay && (
+        <Suspense fallback={<div className="min-h-[200px]" />}>
+          <ReplayPlayer siteId={site.id} id={replay.id} live={live} />
+        </Suspense>
+      )}
+    </Modal>
+  );
+}
+
+/** Small play triangle, the same everywhere a replay can be opened. */
+export function PlayIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4 2.5v11l9-5.5z" fill="currentColor" />
+    </svg>
   );
 }

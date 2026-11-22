@@ -75,14 +75,18 @@ export async function listReplays(db: D1Database, site: Site, from: number, to: 
   return r.results;
 }
 
-/** All events of one recording, as one JSON array. */
-export async function replayEvents(db: D1Database, site: Site, id: string): Promise<Response> {
+/** Events of one recording from chunk `from` on, as {"next": <next chunk>, "events": [...]}; the player polls with
+ *  `next` to follow a visit that is still going (near-live, about 30 s behind).
+ *  shortcut: a chunk that lands after a later one was already read is skipped by a live viewer, fine for watching. */
+export async function replayEvents(db: D1Database, site: Site, id: string, from = 0): Promise<Response> {
   const r = await db
-    .prepare('SELECT c.data FROM replay_chunks c JOIN replays r ON r.id = c.replay_id WHERE r.id = ? AND r.site_id = ? ORDER BY c.seq')
-    .bind(id, site.id)
-    .all<{ data: ArrayBuffer | number[] }>();
+    .prepare('SELECT c.seq, c.data FROM replay_chunks c JOIN replays r ON r.id = c.replay_id WHERE r.id = ? AND r.site_id = ? AND c.seq >= ? ORDER BY c.seq')
+    .bind(id, site.id, from)
+    .all<{ seq: number; data: ArrayBuffer | number[] }>();
   const parts: string[] = [];
+  let next = from;
   for (const row of r.results) {
+    next = row.seq + 1;
     const bytes = row.data instanceof ArrayBuffer ? row.data : new Uint8Array(row.data);
     try {
       const text = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
@@ -91,7 +95,7 @@ export async function replayEvents(db: D1Database, site: Site, id: string): Prom
       if (inner) parts.push(inner);
     } catch {}
   }
-  return new Response('[' + parts.join(',') + ']', { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  return new Response(`{"next":${next},"events":[${parts.join(',')}]}`, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
 /** Hourly: drop recordings older than 7 days. */
