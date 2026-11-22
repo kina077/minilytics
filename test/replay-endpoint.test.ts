@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import type { AppEnv } from '../src/worker/env';
-import { handleReplay } from '../src/worker/replay';
+import { handleReplay, listReplays } from '../src/worker/replay';
 
 /** Just enough of D1: the site lookup, the replay size lookup, and the two writes. */
 function fakeDb(siteBytes = 0) {
@@ -65,5 +65,28 @@ describe('POST /r', () => {
     const full = await post(ok, chunk, 'https://domaintoolbelt.com', 301 * 1024 * 1024);
     expect(full.status).toBe(202);
     expect(full.writes).toEqual([]);
+  });
+});
+
+describe('listReplays', () => {
+  async function sqlOf(filters: object, vid?: string) {
+    let seen = { sql: '', args: [] as unknown[] };
+    const db = {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => ({ all: async () => ((seen = { sql, args }), { results: [] }) }),
+      }),
+    } as unknown as D1Database;
+    await listReplays(db, { id: 'site1' } as any, 10, 20, filters as any, vid);
+    return seen;
+  }
+  it('applies the dashboard filters through the visit', async () => {
+    const { sql, args } = await sqlOf({ country: 'DE', page: '/pricing' });
+    expect(sql).toContain('s.country = ?');
+    expect(args).toEqual(['site1', 10, 20, 'DE', '/pricing']);
+  });
+  it("lists one visitor's replays without the date range", async () => {
+    const { sql, args } = await sqlOf({ country: 'DE' }, 'vid-12345678');
+    expect(sql).not.toContain('s.country = ?');
+    expect(args).toEqual(['site1', 'vid-12345678']);
   });
 });
