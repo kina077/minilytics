@@ -13,11 +13,14 @@
   var cookieDomain = script.getAttribute('data-domain');
   // DomainToolBelt: path prefixes that are never tracked, e.g. data-exclude="/dashboard,/login".
   var excluded = (script.getAttribute('data-exclude') || '').split(',').filter(Boolean);
-  // Returns the matching prefix (e.g. "/dashboard") or '' when the path is tracked.
-  function excludedPrefix(p) {
-    for (var i = 0; i < excluded.length; i++) if (p === excluded[i] || p.indexOf(excluded[i] + '/') === 0) return excluded[i];
+  // DomainToolBelt: session replay only on these path prefixes, e.g. data-replay="/pricing,/login".
+  var replayPaths = (script.getAttribute('data-replay') || '').split(',').filter(Boolean);
+  // Returns the matching prefix (e.g. "/dashboard") or ''.
+  function prefixIn(list, p) {
+    for (var i = 0; i < list.length; i++) if (p === list[i] || p.indexOf(list[i] + '/') === 0) return list[i];
     return '';
   }
+  function excludedPrefix(p) { return prefixIn(excluded, p); }
   // DomainToolBelt (owner's call 2026-11-02, temporary): names are no longer masked, so
   // /domain/<name> and /tools/appraisal/<name> show the real name, and the typed search (?q=) is
   // kept. Every other query parameter is dropped except campaign tags (no tokens or emails).
@@ -142,6 +145,24 @@
     pings = 0;
     send('pageview', { r: firstView && d.referrer ? maskUrl(d.referrer, false) : '' });
     firstView = false;
+    replay();
+  }
+
+  // ---- session replay (DomainToolBelt): the recorder (js/replay.js) loads only on data-replay pages and
+  // stops when the visitor moves to any other page.
+  var replayLoading = false;
+  function replay() {
+    var on = !!prefixIn(replayPaths, loc.pathname) && !excludedPrefix(loc.pathname) && !ignored();
+    if (w.__mlReplay) return w.__mlReplay(on);
+    if (!on || replayLoading || !w.CompressionStream) return;
+    replayLoading = true;
+    var s = d.createElement('script');
+    s.async = true;
+    s.src = new URL('/js/replay.js', script.src).href;
+    s.setAttribute('data-website-id', siteId);
+    s.setAttribute('data-api', new URL('/r', endpoint).href);
+    s.onload = replay;
+    d.head.appendChild(s);
   }
   var hist = w.history;
   if (hist && hist.pushState) {

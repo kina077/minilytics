@@ -16,8 +16,9 @@ const SRC = readFileSync(join(ROOT, 'public/js/script.js'), 'utf8')
 
 type Sent = Record<string, any>
 
-function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
+function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth', replay = '') {
   const sent: Sent[] = []
+  const scripts: Record<string, any>[] = []
   const store: Record<string, string> = {}
   const url = new URL(href)
   const listeners: Record<string, Function[]> = {}
@@ -25,6 +26,7 @@ function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
     'data-website-id': 'dtb-main-site',
     'data-api': 'https://minilytics.example.workers.dev/api/event',
     'data-exclude': exclude,
+    ...(replay ? { 'data-replay': replay } : {}),
   }
   const document = {
     currentScript: { src: 'https://minilytics.example.workers.dev/js/script.js', getAttribute: (k: string) => attrs[k] ?? null, hasAttribute: (k: string) => k in attrs },
@@ -32,8 +34,11 @@ function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
     referrer,
     visibilityState: 'visible',
     addEventListener: (e: string, f: Function) => { (listeners[e] ||= []).push(f) },
+    createElement: () => { const a: Record<string, string> = {}; return { attrs: a, setAttribute: (k: string, v: string) => { a[k] = v } } },
+    head: { appendChild: (s: any) => { scripts.push(s) } },
   }
   const window: any = {
+    CompressionStream: function () {},
     location: { href: url.href, pathname: url.pathname, search: url.search, hostname: url.hostname, protocol: url.protocol },
     navigator: { webdriver: false },
     history: { pushState() {}, replaceState() {} },
@@ -50,7 +55,7 @@ function run(href: string, referrer = '', exclude = '/dashboard,/login,/auth') {
   }
   window.document = document
   vm.runInNewContext(SRC, ctx)
-  return { sent, window, store, listeners, click: (a: string) => {
+  return { sent, scripts, window, store, listeners, click: (a: string) => {
     const el = { closest: (sel: string) => (sel.startsWith('a[') ? { href: a } : null) }
     for (const f of listeners.click || []) f({ target: el })
   } }
@@ -152,4 +157,33 @@ test('query-only changes (search, filters) are not new pageviews; path changes (
   const views = sent.filter(s => s.t === 'pageview')
   assert.equal(views.length, 2)
   assert.equal(views[1].u, 'https://domaintoolbelt.com/hand-reg/hidden-gems')
+})
+
+test('replay recorder loads only on data-replay pages, with the /r endpoint', () => {
+  const { scripts } = run('https://domaintoolbelt.com/pricing?x=1', '', '/dashboard,/auth', '/pricing,/login')
+  assert.equal(scripts.length, 1)
+  assert.equal(scripts[0].src, 'https://minilytics.example.workers.dev/js/replay.js')
+  assert.equal(scripts[0].attrs['data-api'], 'https://minilytics.example.workers.dev/r')
+  assert.equal(scripts[0].attrs['data-website-id'], 'dtb-main-site')
+  for (const p of ['/', '/domain/example.com', '/pricingx', '/dashboard']) {
+    assert.equal(run('https://domaintoolbelt.com' + p, '', '/dashboard,/auth', '/pricing,/login,/dashboard').scripts.length, 0, p)
+  }
+  assert.equal(run('https://domaintoolbelt.com/pricing').scripts.length, 0, 'no data-replay attribute, no recorder')
+  // '/' means the home page only, not every page
+  assert.equal(run('https://domaintoolbelt.com/', '', '/dashboard,/auth', '/,/pricing').scripts.length, 1)
+  assert.equal(run('https://domaintoolbelt.com/domain/example.com', '', '/dashboard,/auth', '/,/pricing').scripts.length, 0)
+})
+
+test('replay is switched off when the visitor leaves the replay pages', () => {
+  const { window, listeners } = run('https://domaintoolbelt.com/pricing', '', '/dashboard,/auth', '/pricing')
+  const calls: boolean[] = []
+  window.__mlReplay = (on: boolean) => calls.push(on)
+  const go = (path: string) => {
+    Object.assign(window.location, { href: 'https://domaintoolbelt.com' + path, pathname: path, search: '' })
+    for (const f of listeners.popstate || []) f()
+  }
+  go('/domain/example.com')
+  go('/pricing')
+  go('/dashboard')
+  assert.deepEqual(calls, [false, true, false])
 })
