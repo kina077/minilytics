@@ -38,7 +38,9 @@ function flush() {
     stop = undefined;
     return;
   }
-  if (!buf.length || !rid || seq >= MAX_CHUNKS) return;
+  // Past the cap nothing more is sent, so stop buffering too (memory on long visits).
+  if (seq >= MAX_CHUNKS) buf = [];
+  if (!buf.length || !rid) return;
   const ids = w.minilytics?.attribution?.() || {};
   if (!ids.ml_session_id) return;
   const events = buf;

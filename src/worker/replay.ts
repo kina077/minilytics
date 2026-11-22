@@ -7,7 +7,8 @@ import { isBot } from './lib/ua';
 
 const MAX_CHUNK = 512 * 1024;
 const MAX_CHUNKS = 200;
-const MAX_REPLAY = 8 * 1024 * 1024;
+// Gzip packs rrweb events ~10x, so 2 MB stored is ~20 MB of JSON when a replay is opened (Worker memory is 128 MB).
+const MAX_REPLAY = 2 * 1024 * 1024;
 export const KEEP_MS = 7 * 86_400_000;
 
 /** POST /r?w&rid&seq&sid&vid&p, body = one gzip chunk of rrweb events (js/replay.js). */
