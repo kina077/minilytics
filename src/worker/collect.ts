@@ -25,7 +25,7 @@ interface Payload {
 const clip = (s: unknown, n = 255): string | null =>
   typeof s === 'string' && s.trim() ? s.trim().slice(0, n) : null;
 
-const isId = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{8,64}$/.test(s);
+export const isId = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{8,64}$/.test(s);
 
 export function normalizePath(pathname: string): string {
   let p = pathname || '/';

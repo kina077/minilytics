@@ -5,6 +5,7 @@ import { GoalsPanel } from '../components/GoalsPanel';
 import { LivePanel } from '../components/LivePanel';
 import { OverviewCard } from '../components/OverviewCard';
 import { Panel, renderLabel } from '../components/Panel';
+import { ReplaysPanel } from '../components/ReplaysPanel';
 import { Toolbar } from '../components/Toolbar';
 import { VisitorModal } from '../components/VisitorModal';
 import { qs, type Overview, type Site } from '../lib/api';
@@ -180,6 +181,10 @@ export function Dashboard({ siteId }: { siteId: string }) {
 
         <div className="mt-5">
           <GoalsPanel totalVisitors={overview?.current.visitors ?? 0} />
+        </div>
+
+        <div className="mt-5">
+          <ReplaysPanel />
         </div>
 
         <p className="mt-8 text-center text-xs text-stone-400">

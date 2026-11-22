@@ -8,6 +8,7 @@ import { billingWebhook, checkout, planInfo } from './billing';
 import { passwordsMatch, randomId } from './lib/crypto';
 import { handleDodoWebhook, handleGoalApi, handlePaymentApi, handleStripeWebhook, learnDodoProducts, rematchPayments } from './payments';
 import { rememberOwnerDevice } from './owner';
+import { handleReplay, listReplays, pruneReplays, replayEvents } from './replay';
 import { breakdown, customers, funnel, goalJourneys, makeCtx, overview, realtime, sparklines, visitorProfile, visitors, type FunnelStep } from './stats';
 
 const app = new Hono<AppEnv>();
@@ -39,6 +40,9 @@ for (const path of ['/api/event', '/e']) {
   app.use(path, cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], maxAge: 86400 }));
   app.post(path, handleEvent);
 }
+// DomainToolBelt: session replay chunks from js/replay.js (same first-party reasoning as /e).
+app.use('/r', cors({ origin: '*', allowMethods: ['POST', 'OPTIONS'], maxAge: 86400 }));
+app.post('/r', handleReplay);
 app.post('/api/webhooks/dodo/:siteId', handleDodoWebhook);
 app.post('/api/webhooks/stripe/:siteId', handleStripeWebhook);
 app.post('/api/v1/payments', handlePaymentApi);
@@ -240,12 +244,13 @@ app.post('/api/sites/:id/rotate-key', async (c) => {
 
 app.delete('/api/sites/:id', async (c) => {
   const id = c.get('site').id;
-  await c.env.DB.batch(
-    // Everything stored for the site, so deleting it really removes its visitors' data.
-    ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products', 'bot_hits'].map((t) =>
-      c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id),
-    ).concat(c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id)),
-  );
+  // Everything stored for the site, so deleting it really removes its visitors' data.
+  const tables = ['events', 'sessions', 'visitors', 'payments', 'funnels', 'payment_claims', 'pending_payments', 'dodo_products', 'bot_hits', 'replays'];
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM replay_chunks WHERE replay_id IN (SELECT id FROM replays WHERE site_id = ?)').bind(id),
+    ...tables.map((t) => c.env.DB.prepare(`DELETE FROM ${t} WHERE site_id = ?`).bind(id)),
+    c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id),
+  ]);
   forgetSite(id);
   return c.json({ ok: true });
 });
@@ -292,6 +297,12 @@ app.get('/api/sites/:id/visitors', async (c) => c.json(await visitors(makeCtx(c)
 app.get('/api/sites/:id/visitors/:vid', async (c) =>
   c.json(await visitorProfile(c.env.DB, c.get('site'), c.req.param('vid'))),
 );
+
+app.get('/api/sites/:id/replays', async (c) => {
+  const { site, range } = makeCtx(c);
+  return c.json(await listReplays(c.env.DB, site, range.from, range.to));
+});
+app.get('/api/sites/:id/replays/:rid', async (c) => replayEvents(c.env.DB, c.get('site'), c.req.param('rid')));
 
 app.get('/api/sites/:id/funnels', async (c) => {
   const res = await c.env.DB.prepare('SELECT * FROM funnels WHERE site_id = ? ORDER BY created_at').bind(c.get('site').id).all();
@@ -343,5 +354,5 @@ app.all('*', async (c) => {
 
 export default {
   fetch: app.fetch,
-  scheduled: (_e: ScheduledController, env: Env, ctx: ExecutionContext) => ctx.waitUntil(syncBots(env)),
+  scheduled: (_e: ScheduledController, env: Env, ctx: ExecutionContext) => ctx.waitUntil(Promise.all([syncBots(env), pruneReplays(env.DB)])),
 };
