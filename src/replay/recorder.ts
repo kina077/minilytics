@@ -10,6 +10,7 @@ const endpoint = me.getAttribute('data-api') || '';
 const MAX_CHUNKS = 200; // the Worker refuses more anyway
 const MAX_MS = 30 * 60_000;
 // One replay per visit: sessionStorage keeps it across page loads in this tab and dies with the tab.
+// shortcut: a tab duplicated by the browser copies sessionStorage, so both tabs write one replay and clashing parts are dropped; give each tab a token if that shows up.
 const KEY = 'ml_replay';
 
 let stop: (() => void) | undefined;
