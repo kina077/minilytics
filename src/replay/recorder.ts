@@ -1,7 +1,7 @@
 /*! Minilytics session replay (DomainToolBelt). Loaded by public/js/script.js only on data-replay pages.
    Records with rrweb (MIT). Typed input and emails are masked in the browser; nothing is stored in cookies. */
 import { record } from '@rrweb/record';
-import { clean, maskEmails, type Ev } from './clean';
+import { clean, maskEmails, resumeFrom, type Ev } from './clean';
 
 const w = window as any;
 const me = document.currentScript as HTMLScriptElement;
@@ -9,6 +9,9 @@ const site = me.getAttribute('data-website-id') || '';
 const endpoint = me.getAttribute('data-api') || '';
 const MAX_CHUNKS = 200; // the Worker refuses more anyway
 const MAX_MS = 30 * 60_000;
+// One replay per visit: sessionStorage keeps it across page loads in this tab and dies with the tab.
+// shortcut: a tab duplicated by the browser copies sessionStorage, so both tabs write one replay and clashing parts are dropped; give each tab a token if that shows up.
+const KEY = 'ml_replay';
 
 let stop: (() => void) | undefined;
 let buf: Ev[] = [];
@@ -30,7 +33,8 @@ const ignored = () => {
   }
 };
 
-function flush() {
+/** `end`: the visitor is leaving or hiding the page. */
+function flush(end = false) {
   // The owner signed in mid-tab: drop what was recorded and stop.
   if (ignored()) {
     buf = [];
@@ -40,13 +44,22 @@ function flush() {
   }
   // Past the cap nothing more is sent, so stop buffering too (memory on long visits).
   if (seq >= MAX_CHUNKS) buf = [];
+  // Marks when the page was left, so a visitor who only read (no taps, no scrolling) gets the real length, not 0s.
+  else if (end && rid) buf.push({ type: 5, data: { tag: 'ml-leave', payload: {} }, timestamp: Date.now() });
   if (!buf.length || !rid) return;
   const ids = w.minilytics?.attribution?.() || {};
   if (!ids.ml_session_id) return;
   const events = buf;
   buf = [];
   const q = new URLSearchParams({ w: site, rid, seq: String(seq++), sid: ids.ml_session_id, vid: ids.ml_visitor_id, p: path });
-  gzip(JSON.stringify(events))
+  try {
+    sessionStorage.setItem(KEY, JSON.stringify({ sid: ids.ml_session_id, rid, seq, path }));
+  } catch {}
+  const json = JSON.stringify(events);
+  // A closing page drops pending promises, so the last part can't wait for gzip: it goes as plain JSON now (the Worker packs it).
+  const plain = new Blob([json], { type: 'text/plain' });
+  if (end && plain.size < 60_000 && navigator.sendBeacon?.(endpoint + '?' + q, plain)) return;
+  gzip(json)
     .then((body) =>
       fetch(endpoint + '?' + q, {
         method: 'POST',
@@ -62,9 +75,13 @@ function flush() {
 
 function start() {
   if (stop) return;
-  rid = crypto.randomUUID();
-  seq = 0;
-  path = location.pathname;
+  let saved;
+  try {
+    saved = resumeFrom(sessionStorage.getItem(KEY), w.minilytics?.attribution?.()?.ml_session_id);
+  } catch {}
+  rid = saved ? saved.rid : crypto.randomUUID();
+  seq = saved ? saved.seq : 0;
+  path = saved ? saved.path : location.pathname;
   started = Date.now();
   stop = record({
     emit(e: Ev) {
@@ -88,12 +105,12 @@ function toggle(on: boolean) {
   if (!stop) return;
   stop();
   stop = undefined;
-  flush();
+  flush(true);
   rid = '';
 }
 
 if (typeof CompressionStream === 'function' && site && endpoint) {
   w.__mlReplay = toggle;
-  setInterval(flush, 30_000);
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
+  setInterval(() => flush(), 30_000);
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush(true));
 }

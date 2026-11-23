@@ -16,3 +16,13 @@ export function clean(e: Ev): Ev {
   }
   return e;
 }
+
+export type Saved = { sid: string; rid: string; seq: number; path: string };
+
+/** The recording this tab already sends for the visit, if the session is still the same: page loads add to it. */
+export function resumeFrom(saved: string | null, sid: string | undefined): Saved | undefined {
+  try {
+    const s = JSON.parse(saved || 'null');
+    if (s && sid && s.sid === sid && typeof s.rid === 'string' && Number.isInteger(s.seq)) return s;
+  } catch {}
+}

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import type { AppEnv } from '../src/worker/env';
 import { handleReplay, listReplays, replayEvents } from '../src/worker/replay';
@@ -57,9 +57,16 @@ describe('POST /r', () => {
     expect((await post(ok, chunk, 'https://evil.example')).status).toBe(403);
     expect((await post(ok.replace('seq=0', 'seq=200'), chunk)).status).toBe(400);
     expect((await post(ok.replace('rid=11111111-2222-4333-8444-555555555555', 'rid=bad'), chunk)).status).toBe(400);
-    const plain = await post(ok, new TextEncoder().encode('[]'));
-    expect(plain.status).toBe(400);
-    expect(plain.writes).toEqual([]);
+    const junk = await post(ok, new TextEncoder().encode('hello'));
+    expect(junk.status).toBe(400);
+    expect(junk.writes).toEqual([]);
+  });
+  it('gzips the plain JSON last part a closing page sends', async () => {
+    const { status, writes } = await post(ok, new TextEncoder().encode('[{"type":5,"data":{},"timestamp":2}]'));
+    expect(status).toBe(202);
+    const stored = new Uint8Array(writes[1][3] as ArrayBuffer);
+    expect([stored[0], stored[1]]).toEqual([0x1f, 0x8b]);
+    expect(gunzipSync(stored).toString()).toBe('[{"type":5,"data":{},"timestamp":2}]');
   });
   it('starts no new replay once the site stores 300 MB', async () => {
     const full = await post(ok, chunk, 'https://domaintoolbelt.com', 301 * 1024 * 1024);
