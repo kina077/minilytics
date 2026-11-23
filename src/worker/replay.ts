@@ -33,11 +33,13 @@ export async function handleReplay(c: Context<AppEnv>) {
   }
   if (!belongsTo(origin.hostname, site.domain)) return c.body(null, 403);
 
-  const data = await c.req.arrayBuffer();
-  // Every chunk is gzip (magic 1f 8b), so the dashboard can always unpack what is stored.
+  let data = await c.req.arrayBuffer();
+  // Every stored chunk is gzip (magic 1f 8b), so the dashboard can always unpack what is stored.
   const head = new Uint8Array(data, 0, Math.min(2, data.byteLength));
   if (data.byteLength > MAX_CHUNK) return c.body(null, 413);
-  if (head[0] !== 0x1f || head[1] !== 0x8b) return c.body(null, 400);
+  // The last part of a closing page comes as a plain JSON array (no time to gzip in the browser): pack it here.
+  if (head[0] === 0x5b) data = await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+  else if (head[0] !== 0x1f || head[1] !== 0x8b) return c.body(null, 400);
   if (await isOwnerVisit(c, site)) return c.body(null, 202);
 
   const db = c.env.DB;
