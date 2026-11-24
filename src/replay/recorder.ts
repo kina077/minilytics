@@ -1,7 +1,7 @@
 /*! Minilytics session replay (DomainToolBelt). Loaded by public/js/script.js only on data-replay pages.
    Records with rrweb (MIT). Typed input and emails are masked in the browser; nothing is stored in cookies. */
 import { record } from '@rrweb/record';
-import { clean, maskEmails, resumeFrom, type Ev } from './clean';
+import { clean, maskText, replayPath, resumeFrom, type Ev } from './clean';
 
 const w = window as any;
 const me = document.currentScript as HTMLScriptElement;
@@ -81,7 +81,7 @@ function start() {
   } catch {}
   rid = saved ? saved.rid : crypto.randomUUID();
   seq = saved ? saved.seq : 0;
-  path = saved ? saved.path : location.pathname;
+  path = saved ? saved.path : replayPath(location.hostname, location.pathname);
   started = Date.now();
   stop = record({
     emit(e: Ev) {
@@ -92,7 +92,7 @@ function start() {
     },
     maskAllInputs: true,
     maskTextSelector: '*',
-    maskTextFn: maskEmails,
+    maskTextFn: maskText,
     blockSelector: '[data-ml-block]',
     slimDOMOptions: 'all',
     sampling: { mousemove: 100, scroll: 150, input: 'last', media: 800 },

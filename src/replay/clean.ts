@@ -1,8 +1,12 @@
 export type Ev = { type: number; data: any; timestamp: number };
 
-const EMAIL = /[\w.+-]+@[\w-]+(\.[\w-]+)+/g;
+// Emails, DomainToolBelt API keys (dtb_live_...) and card-number-like digit runs (13-19 digits).
+const SECRET = /[\w.+-]+@[\w-]+(\.[\w-]+)+|dtb_live_\w+|\b\d(?:[ -]?\d){12,18}\b/g;
 
-export const maskEmails = (text: string) => text.replace(EMAIL, (m) => '*'.repeat(m.length));
+export const maskText = (text: string) => text.replace(SECRET, (m) => '*'.repeat(m.length));
+
+/** Replay path: the API console host (console.<site>) is filed under /console so it never reads as the home page. */
+export const replayPath = (host: string, path: string) => (/^console\./.test(host) ? '/console' + (path === '/' ? '' : path) : path);
 
 /** Meta events carry the full URL: keep origin + path only, so tokens in ?query or #hash never leave. */
 export function clean(e: Ev): Ev {

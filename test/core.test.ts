@@ -128,6 +128,8 @@ describe('full page paths (DomainToolBelt)', () => {
   it('keeps the typed search and drops every other query parameter', () => {
     expect(pagePath(new URL('https://domaintoolbelt.com/search?q=apple.io&token=x'))).toBe('/search?q=apple.io');
     expect(pagePath(new URL('https://domaintoolbelt.com/drops?utm_source=x'))).toBe('/drops');
+    expect(pagePath(new URL('https://console.domaintoolbelt.com/'))).toBe('/console');
+    expect(pagePath(new URL('https://console.domaintoolbelt.com/keys'))).toBe('/console/keys');
     expect(pagePath(new URL('https://domaintoolbelt.com/search?q=%20'))).toBe('/search');
   });
   it('stores outbound links without their query', () => {

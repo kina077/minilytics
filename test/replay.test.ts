@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { clean, maskEmails, resumeFrom } from '../src/replay/clean';
+import { clean, maskText, replayPath, resumeFrom } from '../src/replay/clean';
 
 describe('replay masking', () => {
   it('hides emails in page text, keeps the rest', () => {
-    expect(maskEmails('Signed in as jo.smith+x@mail.example.com today')).toBe('Signed in as ' + '*'.repeat(27) + ' today');
-    expect(maskEmails('example.com is available')).toBe('example.com is available');
+    expect(maskText('Signed in as jo.smith+x@mail.example.com today')).toBe('Signed in as ' + '*'.repeat(27) + ' today');
+    expect(maskText('example.com is available')).toBe('example.com is available');
+  });
+  it('hides API keys and card numbers, keeps normal numbers', () => {
+    const key = 'dtb_live_' + 'a1B2'.repeat(8);
+    expect(maskText('Key ' + key)).toBe('Key ' + '*'.repeat(key.length));
+    expect(maskText('Card 4242 4242 4242 4242 ok')).toBe('Card ' + '*'.repeat(19) + ' ok');
+    expect(maskText('1,400+ TLDs, 2026-11-24, ending 4242')).toBe('1,400+ TLDs, 2026-11-24, ending 4242');
+  });
+  it('files the API console host under /console', () => {
+    expect(replayPath('console.domaintoolbelt.com', '/')).toBe('/console');
+    expect(replayPath('console.domaintoolbelt.com', '/keys')).toBe('/console/keys');
+    expect(replayPath('domaintoolbelt.com', '/')).toBe('/');
   });
   it('drops the query and hash from the recorded page URL', () => {
     const e = clean({ type: 4, data: { href: 'https://domaintoolbelt.com/login?token=secret#access_token=x', width: 1, height: 1 }, timestamp: 1 });
