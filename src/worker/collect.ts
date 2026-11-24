@@ -40,7 +40,8 @@ export function normalizePath(pathname: string): string {
 // (/domain/example.com), and a typed search keeps its ?q= so the Pages tab shows what people
 // searched for. No other query parameter is stored.
 export function pagePath(url: URL): string {
-  const path = normalizePath(url.pathname);
+  // DomainToolBelt: the API console host serves its tabs at the root; file them under /console.
+  const path = normalizePath((/^console\./.test(url.hostname) ? '/console' : '') + url.pathname);
   const q = url.searchParams.get('q')?.trim();
   return q ? (path + '?q=' + q).slice(0, 500) : path;
 }
